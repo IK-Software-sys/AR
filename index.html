@@ -3,136 +3,37 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Interactive 3D Radio - Edit Mode</title>
+    <title>AR Radio - Real World Placement</title>
     <style>
-        body { 
-            margin: 0; 
-            overflow: hidden; 
-            background-color: #1a1a1a; 
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-        }
+        body { margin: 0; overflow: hidden; font-family: sans-serif; }
+        #css-container { position: absolute; top: 0; pointer-events: none; }
         
-        #canvas-container { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; }
-        
-        #css-container { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; }
-        
+        /* UI Styling */
         .model-ui-wrapper {
-            position: relative;
-            pointer-events: none; /* Let clicks pass to 3D gizmo by default */
-            display: flex;
-            align-items: flex-start;
-            gap: 15px;
-            transform: translate3d(-50%, -50%, 0);
-        }
-
-        /* Tool Palette for Move, Rotate, Scale */
-        .transform-tools {
-            pointer-events: auto; /* Re-enable clicks for buttons */
-            background: rgba(255, 255, 255, 0.9);
-            border-radius: 8px;
+            pointer-events: auto;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px;
+            border-radius: 10px;
+            color: white;
             display: flex;
             flex-direction: column;
-            padding: 4px;
-            gap: 4px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.4);
-        }
-
-        .tool-btn {
-            width: 40px;
-            height: 40px;
-            border: none;
-            background: transparent;
-            border-radius: 6px;
-            font-size: 20px;
-            cursor: pointer;
-            color: #333;
-            transition: background 0.2s;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-
-        .tool-btn:hover { background: #e0e0e0; }
-        .tool-btn.active { background: #4CAF50; color: white; }
-
-        /* Music Player Hover Interface */
-        .music-player {
-            pointer-events: auto;
-            background: rgba(20, 20, 20, 0.85);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            padding: 16px;
-            border-radius: 12px;
-            color: white;
-            width: 240px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.6);
-            /* Slide effect */
-            opacity: 0;
-            transform: translateX(-20px);
-            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
-        }
-
-        /* Show music player when hovering over the whole wrapper */
-        .model-ui-wrapper:hover .music-player {
-            opacity: 1;
-            transform: translateX(0);
-        }
-
-        .music-player h4 { 
-            margin: 0 0 12px 0; 
-            font-size: 15px; 
-            font-weight: 500; 
-            text-align: center; 
-            white-space: nowrap; 
-            overflow: hidden; 
-            text-overflow: ellipsis; 
-            color: #4CAF50;
-        }
-        
-        .controls {
-            display: flex;
-            justify-content: space-between;
-            gap: 8px;
-        }
-        
-        .controls button {
-            flex: 1;
-            padding: 8px 0;
-            background: #333;
-            color: white;
-            border: 1px solid #444;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: 600;
-            font-size: 13px;
-            transition: all 0.2s;
-        }
-        
-        .controls button:hover { background: #555; }
-        .controls button.active { background: #4CAF50; border-color: #4CAF50; }
-
-        /* Loading Screen */
-        #loading {
-            position: absolute;
-            top: 50%; left: 50%;
+            gap: 10px;
             transform: translate(-50%, -50%);
-            color: white;
-            font-size: 18px;
-            background: rgba(0,0,0,0.8);
-            padding: 20px 30px;
-            border-radius: 8px;
-            z-index: 100;
-            border: 1px solid #333;
         }
+        .controls button {
+            background: #444;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .controls button.active { background: #4CAF50; }
     </style>
 </head>
 <body>
-    <div id="loading">Loading Environment & 3D Model...</div>
-    
-    <div id="canvas-container"></div>
     <div id="css-container"></div>
-
-    <audio id="audio-player" preload="auto"></audio>
+    <audio id="audio-player"></audio>
 
     <script type="importmap">
         {
@@ -146,244 +47,161 @@
     <script type="module">
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-        import { TransformControls } from 'three/addons/controls/TransformControls.js';
+        import { ARButton } from 'three/addons/webxr/ARButton.js';
         import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
-        import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+        import { TransformControls } from 'three/addons/controls/TransformControls.js';
 
-        // ==========================================
-        // 1. SCENE SETUP
-        // ==========================================
-        const scene = new THREE.Scene();
+        let container, camera, scene, renderer, labelRenderer;
+        let controller, reticle, radioGroup;
+        let transformControl;
 
-        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
-        camera.position.set(0, 1.5, 3.5);
+        init();
+        animate();
 
-        const canvasContainer = document.getElementById('canvas-container');
-        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(window.devicePixelRatio);
-        renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        renderer.toneMappingExposure = 1.0;
-        renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        canvasContainer.appendChild(renderer.domElement);
+        function init() {
+            container = document.createElement('div');
+            document.body.appendChild(container);
 
-        const cssContainer = document.getElementById('css-container');
-        const labelRenderer = new CSS2DRenderer();
-        labelRenderer.setSize(window.innerWidth, window.innerHeight);
-        cssContainer.appendChild(labelRenderer.domElement);
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
 
-        const pmremGenerator = new THREE.PMREMGenerator(renderer);
-        scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
+            // Lighting for "Real" look
+            const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
+            light.position.set(0.5, 1, 0.25);
+            scene.add(light);
 
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
-        scene.add(ambientLight);
-        
-        const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
-        dirLight.position.set(5, 10, 5);
-        dirLight.castShadow = true;
-        dirLight.shadow.mapSize.width = 2048;
-        dirLight.shadow.mapSize.height = 2048;
-        scene.add(dirLight);
+            // Renderer setup with XR enabled
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.xr.enabled = true;
+            container.appendChild(renderer.domElement);
 
-        const floorGeo = new THREE.PlaneGeometry(100, 100);
-        const floorMat = new THREE.ShadowMaterial({ opacity: 0.6 });
-        const floor = new THREE.Mesh(floorGeo, floorMat);
-        floor.rotation.x = -Math.PI / 2;
-        floor.receiveShadow = true;
-        scene.add(floor);
+            // 2D UI Renderer
+            labelRenderer = new CSS2DRenderer();
+            labelRenderer.setSize(window.innerWidth, window.innerHeight);
+            labelRenderer.domElement.style.position = 'absolute';
+            labelRenderer.domElement.style.top = '0px';
+            document.getElementById('css-container').appendChild(labelRenderer.domElement);
 
-        const orbitControls = new OrbitControls(camera, renderer.domElement);
-        orbitControls.enableDamping = true;
-        orbitControls.target.set(0, 0.5, 0);
+            // Add the AR Button
+            document.body.appendChild(ARButton.createButton(renderer, { requiredFeatures: ['hit-test'] }));
 
-        let radioGroup = new THREE.Group();
-        scene.add(radioGroup);
+            radioGroup = new THREE.Group();
+            scene.add(radioGroup);
 
-        // ==========================================
-        // 2. TRANSFORM CONTROLS (Move, Rotate, Scale)
-        // ==========================================
-        const transformControl = new TransformControls(camera, renderer.domElement);
-        transformControl.addEventListener('dragging-changed', function (event) {
-            // Disable camera orbit when dragging the model
-            orbitControls.enabled = !event.value;
-        });
-        transformControl.attach(radioGroup);
-        scene.add(transformControl);
+            // Reticle (the square that shows where the radio will land)
+            reticle = new THREE.Mesh(
+                new THREE.RingGeometry(0.15, 0.2, 32).rotateX(-Math.PI / 2),
+                new THREE.MeshBasicMaterial()
+            );
+            reticle.matrixAutoUpdate = false;
+            reticle.visible = false;
+            scene.add(reticle);
 
-        // ==========================================
-        // 3. HTML UI CREATION
-        // ==========================================
-        const songs = [
-            { title: "Cuphead - Die House", src: "cuphead-ost-die-house-music.mp3" },
-            { title: "Quantum Mechanics", src: "Quantum Mechanics.mp3" }
-        ];
-        let currentSongIndex = 0;
-        const audioPlayer = document.getElementById('audio-player');
-        audioPlayer.src = songs[currentSongIndex].src;
+            // Controller for placing the object
+            controller = renderer.xr.getController(0);
+            controller.addEventListener('select', onSelect);
+            scene.add(controller);
 
-        const uiWrapper = document.createElement('div');
-        uiWrapper.className = 'model-ui-wrapper';
+            // Load Model
+            const loader = new GLTFLoader();
+            loader.load('old_radio.glb', (gltf) => {
+                radioGroup.add(gltf.scene);
+                radioGroup.visible = false; // Hide until user places it
+                createUI();
+            });
 
-        // Transform Tools Palette
-        const toolsPanel = document.createElement('div');
-        toolsPanel.className = 'transform-tools';
+            // Transform Controls
+            transformControl = new TransformControls(camera, renderer.domElement);
+            scene.add(transformControl);
 
-        const moveBtn = document.createElement('button');
-        moveBtn.className = 'tool-btn active';
-        moveBtn.innerHTML = '✥';
-        moveBtn.title = "Move";
-
-        const rotateBtn = document.createElement('button');
-        rotateBtn.className = 'tool-btn';
-        rotateBtn.innerHTML = '↻';
-        rotateBtn.title = "Rotate";
-
-        const scaleBtn = document.createElement('button');
-        scaleBtn.className = 'tool-btn';
-        scaleBtn.innerHTML = '⤡';
-        scaleBtn.title = "Scale";
-
-        toolsPanel.appendChild(moveBtn);
-        toolsPanel.appendChild(rotateBtn);
-        toolsPanel.appendChild(scaleBtn);
-        uiWrapper.appendChild(toolsPanel);
-
-        // Music Player Interface
-        const musicPlayer = document.createElement('div');
-        musicPlayer.className = 'music-player';
-        
-        const titleEl = document.createElement('h4');
-        titleEl.innerText = songs[currentSongIndex].title;
-        musicPlayer.appendChild(titleEl);
-
-        const btnContainer = document.createElement('div');
-        btnContainer.className = 'controls';
-
-        const playBtn = document.createElement('button');
-        playBtn.innerText = '▶ Play';
-        
-        const pauseBtn = document.createElement('button');
-        pauseBtn.innerText = '⏸ Pause';
-        
-        const nextBtn = document.createElement('button');
-        nextBtn.innerText = '⏭ Next';
-
-        btnContainer.appendChild(playBtn);
-        btnContainer.appendChild(pauseBtn);
-        btnContainer.appendChild(nextBtn);
-        musicPlayer.appendChild(btnContainer);
-        uiWrapper.appendChild(musicPlayer);
-
-        const uiObject = new CSS2DObject(uiWrapper);
-        radioGroup.add(uiObject);
-
-        // Transform Button Listeners
-        const toolBtns = [moveBtn, rotateBtn, scaleBtn];
-        function resetToolButtons() {
-            toolBtns.forEach(btn => btn.classList.remove('active'));
+            window.addEventListener('resize', onWindowResize);
         }
 
-        moveBtn.addEventListener('click', () => {
-            resetToolButtons();
-            moveBtn.classList.add('active');
-            transformControl.setMode('translate');
-        });
+        function createUI() {
+            const songs = [
+                { title: "Cuphead", src: "cuphead-ost-die-house-music.mp3" },
+                { title: "Quantum", src: "Quantum Mechanics.mp3" }
+            ];
+            let currentIdx = 0;
+            const audio = document.getElementById('audio-player');
+            audio.src = songs[currentIdx].src;
 
-        rotateBtn.addEventListener('click', () => {
-            resetToolButtons();
-            rotateBtn.classList.add('active');
-            transformControl.setMode('rotate');
-        });
+            const div = document.createElement('div');
+            div.className = 'model-ui-wrapper';
+            div.innerHTML = `
+                <div id="song-name" style="font-size:12px">${songs[currentIdx].title}</div>
+                <div class="controls">
+                    <button id="play">▶</button>
+                    <button id="pause">⏸</button>
+                    <button id="next">⏭</button>
+                </div>
+                <div class="controls">
+                    <button id="m-move">Move</button>
+                    <button id="m-rot">Rot</button>
+                </div>
+            `;
 
-        scaleBtn.addEventListener('click', () => {
-            resetToolButtons();
-            scaleBtn.classList.add('active');
-            transformControl.setMode('scale');
-        });
+            const uiObj = new CSS2DObject(div);
+            uiObj.position.set(0, 0.5, 0); // Position UI above radio
+            radioGroup.add(uiObj);
 
-        // Audio Button Listeners
-        playBtn.addEventListener('click', () => {
-            audioPlayer.play();
-            playBtn.classList.add('active');
-            pauseBtn.classList.remove('active');
-        });
+            // Logic for buttons
+            div.querySelector('#play').onclick = () => audio.play();
+            div.querySelector('#pause').onclick = () => audio.pause();
+            div.querySelector('#next').onclick = () => {
+                currentIdx = (currentIdx + 1) % songs.length;
+                audio.src = songs[currentIdx].src;
+                div.querySelector('#song-name').innerText = songs[currentIdx].title;
+                audio.play();
+            };
+            
+            div.querySelector('#m-move').onclick = () => transformControl.setMode('translate');
+            div.querySelector('#m-rot').onclick = () => transformControl.setMode('rotate');
+        }
 
-        pauseBtn.addEventListener('click', () => {
-            audioPlayer.pause();
-            pauseBtn.classList.add('active');
-            playBtn.classList.remove('active');
-        });
-
-        nextBtn.addEventListener('click', () => {
-            currentSongIndex = (currentSongIndex + 1) % songs.length;
-            audioPlayer.src = songs[currentSongIndex].src;
-            titleEl.innerText = songs[currentSongIndex].title;
-            audioPlayer.play();
-            playBtn.classList.add('active');
-            pauseBtn.classList.remove('active');
-        });
-
-        // Stop UI clicks from affecting the 3D scene underneath
-        uiWrapper.addEventListener('pointerdown', (e) => e.stopPropagation());
-
-        // ==========================================
-        // 4. LOAD GLB MODEL
-        // ==========================================
-        const loader = new GLTFLoader();
-        loader.load(
-            'old_radio.glb',
-            function (gltf) {
-                const model = gltf.scene;
-                
-                const box = new THREE.Box3().setFromObject(model);
-                const center = box.getCenter(new THREE.Vector3());
-                const size = box.getSize(new THREE.Vector3());
-                
-                model.position.x = -center.x;
-                model.position.y = -box.min.y;
-                model.position.z = -center.z;
-
-                model.traverse((child) => {
-                    if (child.isMesh) {
-                        child.castShadow = true;
-                        child.receiveShadow = true;
-                    }
-                });
-
-                radioGroup.add(model);
-                
-                // Position UI based on model size
-                uiObject.position.set(size.x / 2 + 0.3, size.y / 2, 0);
-
-                document.getElementById('loading').style.display = 'none';
-            },
-            undefined,
-            function (error) {
-                console.error(error);
-                document.getElementById('loading').innerHTML = "Error loading model.<br>Ensure files are in the same directory.";
+        function onSelect() {
+            if (reticle.visible) {
+                radioGroup.visible = true;
+                radioGroup.position.setFromMatrixPosition(reticle.matrix);
+                transformControl.attach(radioGroup);
             }
-        );
+        }
 
-        // ==========================================
-        // 5. RENDER LOOP & RESIZING
-        // ==========================================
-        window.addEventListener('resize', () => {
+        function onWindowResize() {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
             labelRenderer.setSize(window.innerWidth, window.innerHeight);
-        });
+        }
 
         function animate() {
-            requestAnimationFrame(animate);
-            orbitControls.update(); 
+            renderer.setAnimationLoop(render);
+        }
+
+        function render(timestamp, frame) {
+            if (frame) {
+                const referenceSpace = renderer.xr.getReferenceSpace();
+                const session = renderer.xr.getSession();
+                const hitTestSource = session.requestHitTestSource ? 
+                    await session.requestHitTestSource({ space: referenceSpace }) : null;
+
+                if (hitTestSource) {
+                    const hitTestResults = frame.getHitTestResults(hitTestSource);
+                    if (hitTestResults.length) {
+                        const hit = hitTestResults[0];
+                        reticle.visible = true;
+                        reticle.matrix.fromArray(hit.getPose(referenceSpace).transform.matrix);
+                    } else {
+                        reticle.visible = false;
+                    }
+                }
+            }
+
             renderer.render(scene, camera);
             labelRenderer.render(scene, camera);
         }
-        
-        animate();
     </script>
 </body>
 </html>
