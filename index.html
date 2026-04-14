@@ -3,80 +3,61 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fixed Android AR</title>
+    <meta name="mobile-web-app-capable" content="yes">
+    <title>Radio AR AI</title>
     <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.4.0/model-viewer.min.js"></script>
     <style>
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; color: white; }
-        model-viewer { width: 100%; height: 100%; }
-        
-        .ui {
-            position: absolute; bottom: 30px; width: 100%;
-            display: flex; flex-direction: column; align-items: center; gap: 15px; z-index: 100;
-        }
-
-        .ar-btn {
-            background: #fff; color: #000; padding: 20px 40px;
-            border-radius: 50px; font-weight: bold; border: none; font-size: 18px;
-            box-shadow: 0 5px 20px rgba(229, 177, 58, 0.4);
-        }
-
-        #logger {
-            background: rgba(0,0,0,0.8); padding: 10px; border-radius: 5px;
-            font-family: monospace; font-size: 11px; width: 80%; border: 1px solid #444;
-        }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; color: #fff; font-family: sans-serif; }
+        model-viewer { width: 100%; height: 100%; --poster-color: transparent; }
+        .ui-panel { position: absolute; bottom: 40px; width: 100%; display: flex; flex-direction: column; align-items: center; gap: 15px; z-index: 100; }
+        .ar-btn { background: #e5b13a; color: #000; padding: 20px 40px; border-radius: 50px; font-weight: bold; border: none; font-size: 18px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        #status { font-family: monospace; font-size: 12px; background: rgba(0,0,0,0.7); padding: 8px; border-radius: 5px; }
     </style>
 </head>
 <body>
 
     <model-viewer 
-        id="ctrl"
-        src="./old_radio.glb" 
+        id="ar-radio"
+        src="old_radio.glb" 
         ar 
-        ar-modes="webxr scene-viewer" 
+        ar-modes="webxr" 
         camera-controls 
         ar-placement="floor"
         shadow-intensity="1">
 
-        <div class="ui">
-            <div id="logger">System Status: Waiting for user...</div>
-            <button slot="ar-button" class="ar-btn">START CAMERA FEED</button>
+        <div class="ui-panel">
+            <div id="status">Ready to Scan Desk...</div>
+            <button slot="ar-button" class="ar-btn">OPEN AR CAMERA</button>
         </div>
 
     </model-viewer>
 
     <script>
-        const m = document.querySelector('#ctrl');
-        const log = document.querySelector('#logger');
+        const viewer = document.querySelector('#ar-radio');
+        const status = document.querySelector('#status');
 
-        // 1. Log when the radio model is actually ready
-        m.addEventListener('load', () => {
-            log.innerText = "✅ Radio Model Loaded. Ready for AR.";
-        });
-
-        // 2. Log if the AR fails to start
-        m.addEventListener('ar-status', (event) => {
-            log.innerText = "Status: " + event.detail.status;
-            if (event.detail.status === 'failed') {
-                log.innerText = "❌ FAILED: Check Camera Permissions or ARCore updates.";
-            }
-        });
-
-        // 3. ML-Style Scaling Logic (Distance Based)
+        // Logic: Scaling the radio as you move closer/further
         setInterval(() => {
-            if (m.arTracking === 'tracking') {
-                const orbit = m.getCameraOrbit();
-                const d = orbit.radius; 
-                // Scaling factor: Object grows as you walk away to stay visible
-                let s = d * 0.8; 
-                s = Math.min(Math.max(s, 0.4), 3.0);
-                m.scale = `${s} ${s} ${s}`;
-                log.innerText = `📏 Distance: ${d.toFixed(2)}m | Scale: ${s.toFixed(2)}x`;
+            if (viewer.arTracking === 'tracking') {
+                const orbit = viewer.getCameraOrbit();
+                const dist = orbit.radius; 
+                // As you get closer (dist decreases), the radio gets smaller
+                // As you move away (dist increases), it scales up
+                let dynamicScale = dist * 0.8; 
+                dynamicScale = Math.min(Math.max(dynamicScale, 0.4), 3.5);
+                
+                viewer.scale = `${dynamicScale} ${dynamicScale} ${dynamicScale}`;
+                status.innerText = `Dist: ${dist.toFixed(2)}m | Scale: ${dynamicScale.toFixed(2)}x`;
             }
         }, 100);
 
-        // 4. Critical Error Catching
-        m.addEventListener('error', (e) => {
-            log.innerText = "❌ Error: Could not find 'old_radio.glb'";
+        viewer.addEventListener('ar-status', (e) => {
+            if(e.detail.status === 'session-started') {
+                status.innerText = "Camera Feed Active - Move phone to find desk";
+            }
+            if(e.detail.status === 'failed') {
+                status.innerText = "ERROR: Camera blocked. Check Site Settings.";
+            }
         });
     </script>
 </body>
