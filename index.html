@@ -1,121 +1,185 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>AR Radio: Fist to Summon</title>
-  <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AR room - Fist to Summon</title>
+    
+    <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
 
-  <style>
-    body { margin: 0; overflow: hidden; background: #000; }
-    #video-input, #camera-feed { position: absolute; width: 100vw; height: 100vh; object-fit: cover; }
-    #video-input { display: none; }
-    #hand-canvas { position: absolute; width: 100vw; height: 100vh; object-fit: cover; z-index: 5; pointer-events: none; }
-    #camera-feed { z-index: 1; }
-    a-scene { position: absolute; z-index: 10; width: 100vw; height: 100vh; }
-  </style>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: sans-serif; }
+        
+        /* Hidden input for AI processing */
+        #video-input { display: none; }
+        
+        /* The visible camera feed */
+        #camera-feed {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            object-fit: cover;
+            z-index: 1;
+        }
+
+        /* The hand skeleton canvas */
+        #hand-canvas {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            object-fit: cover;
+            z-index: 2;
+            pointer-events: none;
+        }
+
+        /* A-Frame Container */
+        a-scene {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            z-index: 3;
+        }
+    </style>
 </head>
 <body>
 
-  <video id="video-input"></video>
-  <video id="camera-feed" autoplay playsinline></video>
-  <canvas id="hand-canvas"></canvas>
+    <video id="video-input" playsinline></video>
+    <video id="camera-feed" autoplay playsinline></video>
+    <canvas id="hand-canvas"></canvas>
 
-  <a-scene embedded vr-mode-ui="enabled: false" renderer="alpha: true; antialias: true;">
-    <a-assets>
-      <a-asset-item id="radio-model" src="old_radio.glb"></a-asset-item>
-    </a-assets>
+    <a-scene embedded vr-mode-ui="enabled: false" renderer="alpha: true; antialias: true; colorManagement: true;">
+        <a-assets>
+            <a-asset-item id="radio-model" src="old_radio.glb"></a-asset-item>
+        </a-assets>
 
-    <a-camera position="0 1.6 0" look-controls="enabled: false">
-        <a-cursor fuse="false" color="cyan"></a-cursor>
-    </a-camera>
+        <a-entity light="type: ambient; intensity: 1"></a-entity>
+        <a-entity light="type: directional; intensity: 0.8" position="1 2 1"></a-entity>
 
-    <a-entity id="radio-group" position="0 1.5 -2" visible="false">
-      <a-box size="0.2 0.2 0.2" material="wireframe: true; color: white" opacity="0.3"></a-box>
-      
-      <a-entity gltf-model="#radio-model" scale="1 1 1" rotation="0 180 0"></a-entity>
-      
-      <a-entity position="0 0.5 0">
-        <a-plane class="clickable" width="0.4" height="0.15" color="#222" position="-0.25 0 0" text="value: Song 1; align: center" onmouseenter="playSong('song1')"></a-plane>
-        <a-plane class="clickable" width="0.4" height="0.15" color="#222" position="0.25 0 0" text="value: Song 2; align: center" onmouseenter="playSong('song2')"></a-plane>
-      </a-entity>
-    </a-entity>
+        <a-camera position="0 1.6 0" look-controls="enabled: false">
+            <a-cursor fuse="false" color="yellow" raycaster="objects: .clickable"></a-cursor>
+        </a-camera>
 
-    <a-light type="ambient" intensity="1"></a-light>
-    <a-light type="directional" position="1 1 1"></a-light>
-  </a-scene>
+        <a-entity id="radio-group" position="0 1.5 -2" visible="false">
+            
+            <a-entity gltf-model="#radio-model" scale="1 1 1" rotation="0 180 0"></a-entity>
+            
+            <a-box size="0.2 0.2 0.2" material="wireframe: true; color: white" opacity="0.5"></a-box>
 
-  <audio id="audio-song1" src="825653__1love__1love_synth_unkown-undercurrents-[AudioTrimmer.com].wav"></audio>
-  <audio id="audio-song2" src="Quantum Mechanics.mp3"></audio>
+            <a-entity position="0 0.6 0">
+                <a-plane class="clickable" width="0.5" height="0.15" color="#222" position="-0.3 0 0" 
+                         text="value: Song 1; align: center" onmouseenter="playSong('song1')"></a-plane>
+                
+                <a-plane class="clickable" width="0.5" height="0.15" color="#222" position="0.3 0 0" 
+                         text="value: Song 2; align: center" onmouseenter="playSong('song2')"></a-plane>
+                
+                <a-plane class="clickable" width="0.4" height="0.15" color="#900" position="0 -0.2 0" 
+                         text="value: Stop; align: center" onmouseenter="pauseAudio()"></a-plane>
+            </a-entity>
+        </a-entity>
+    </a-scene>
 
-  <script>
-    const radioGroup = document.getElementById('radio-group');
-    const videoElement = document.getElementById('video-input');
-    const cameraBg = document.getElementById('camera-feed');
-    const canvasElement = document.getElementById('hand-canvas');
-    const canvasCtx = canvasElement.getContext('2d');
+    <audio id="audio-song1" src="825653__1love__1love_synth_unkown-undercurrents-[AudioTrimmer.com].wav"></audio>
+    <audio id="audio-song2" src="Quantum Mechanics.mp3"></audio>
 
-    // 1. BACK CAMERA SETUP (NO MIRROR)
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
-      .then(stream => { 
-          videoElement.srcObject = stream; 
-          cameraBg.srcObject = stream; 
-      });
+    <script>
+        const videoElement = document.getElementById('video-input');
+        const cameraBg = document.getElementById('camera-feed');
+        const canvasElement = document.getElementById('hand-canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+        const radioGroup = document.getElementById('radio-group');
 
-    const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-    hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
+        const audio1 = document.getElementById('audio-song1');
+        const audio2 = document.getElementById('audio-song2');
 
-    hands.onResults((results) => {
-      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-        const landmarks = results.multiHandLandmarks[0];
-        
-        // DRAW SKELETON (Aligned for Back Camera)
-        drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 4});
-        drawLandmarks(canvasCtx, landmarks, {color: '#FF0000', radius: 3});
-
-        // 2. COORDINATE MAPPING
-        const indexTip = landmarks[8];
-        const wrist = landmarks[0];
-        
-        // Map 0-1 to A-Frame space (-2 to 2)
-        const targetX = (indexTip.x * 4) - 2;
-        const targetY = (1 - indexTip.y) * 3;
-
-        // 3. GESTURE DETECTION
-        // Check if index, middle, and ring tips are close to the wrist (Fist)
-        const isFist = landmarks[8].y > landmarks[6].y && 
-                       landmarks[12].y > landmarks[10].y && 
-                       landmarks[16].y > landmarks[14].y;
-
-        if (isFist) {
-          radioGroup.setAttribute('visible', 'true');
-          radioGroup.setAttribute('position', `${targetX} ${targetY} -2`);
+        // 1. Setup Camera (Environment mode for Back Camera)
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { 
+                        facingMode: "environment",
+                        width: { ideal: 640 }, // Lower res to prevent browser crash
+                        height: { ideal: 480 }
+                    }
+                });
+                videoElement.srcObject = stream;
+                cameraBg.srcObject = stream;
+                return new Promise(resolve => videoElement.onloadedmetadata = () => resolve());
+            } catch (err) {
+                alert("Camera Access Denied or Busy. Error: " + err);
+            }
         }
 
-        // 4. PINCH TO DRAG (Index & Thumb)
-        const dist = Math.hypot(landmarks[8].x - landmarks[4].x, landmarks[8].y - landmarks[4].y);
-        if (dist < 0.05) {
-          radioGroup.setAttribute('position', `${targetX} ${targetY} -2`);
+        // 2. MediaPipe Hands Logic
+        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+        
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 0, // 0 is essential for mobile performance/stability
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        hands.onResults((results) => {
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const landmarks = results.multiHandLandmarks[0];
+
+                // Draw Skeleton (Green lines, Red dots)
+                drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 4});
+                drawLandmarks(canvasCtx, landmarks, {color: '#FF0000', radius: 3});
+
+                // Mapping Coordinates (No mirroring for back camera)
+                const indexTip = landmarks[8];
+                const wrist = landmarks[0];
+                const targetX = (indexTip.x * 4) - 2; 
+                const targetY = (1 - indexTip.y) * 3;
+
+                // FIST GESTURE DETECTION
+                // If fingertips are below the middle knuckles
+                const isFist = landmarks[8].y > landmarks[6].y && 
+                               landmarks[12].y > landmarks[10].y && 
+                               landmarks[16].y > landmarks[14].y;
+
+                if (isFist) {
+                    radioGroup.setAttribute('visible', 'true');
+                    radioGroup.setAttribute('position', `${targetX} ${targetY} -1.5`);
+                }
+
+                // PINCH GESTURE DETECTION (Thumb + Index)
+                const pinchDist = Math.hypot(landmarks[8].x - landmarks[4].x, landmarks[8].y - landmarks[4].y);
+                if (pinchDist < 0.05) {
+                    radioGroup.setAttribute('position', `${targetX} ${targetY} -1.5`);
+                }
+            }
+        });
+
+        // 3. Audio Functions
+        function playSong(id) {
+            pauseAudio();
+            if (id === 'song1') audio1.play();
+            if (id === 'song2') audio2.play();
         }
-      }
-    });
 
-    const camera = new Camera(videoElement, {
-      onFrame: async () => {
-        canvasElement.width = videoElement.videoWidth;
-        canvasElement.height = videoElement.videoHeight;
-        await hands.send({image: videoElement});
-      }
-    });
-    camera.start();
+        function pauseAudio() {
+            audio1.pause();
+            audio2.pause();
+        }
 
-    function playSong(s) {
-      document.getElementById('audio-song1').pause();
-      document.getElementById('audio-song2').pause();
-      document.getElementById('audio-' + s).play();
-    }
-  </script>
+        // 4. Initialize
+        startCamera().then(() => {
+            const camera = new Camera(videoElement, {
+                onFrame: async () => {
+                    canvasElement.width = videoElement.videoWidth;
+                    canvasElement.height = videoElement.videoHeight;
+                    await hands.send({image: videoElement});
+                }
+            });
+            camera.start();
+        });
+    </script>
 </body>
 </html>
