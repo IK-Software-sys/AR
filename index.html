@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fixed Spatial Radio</title>
+    <title>Sensor Lock AR Radio</title>
     <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.4.0/model-viewer.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
@@ -13,16 +13,27 @@
         
         #static-player {
             position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
-            width: 90%; max-width: 400px; background: rgba(20, 15, 10, 0.98);
-            border: 2px solid #e5b13a; border-radius: 4px; padding: 15px;
+            width: 92%; max-width: 450px; background: rgba(20, 15, 10, 0.98);
+            border: 2px solid #e5b13a; border-radius: 4px; padding: 12px;
             z-index: 2000; display: flex; justify-content: space-between; align-items: center;
         }
 
-        #track-display { font-size: 13px; color: #e5b13a; font-weight: bold; }
-        .radio-btn { background: #e5b13a; border: none; padding: 10px 15px; border-radius: 2px; cursor: pointer; font-weight: bold; font-family: inherit; }
+        #track-display { font-size: 12px; color: #e5b13a; font-weight: bold; overflow: hidden; white-space: nowrap; }
+        .btn-group { display: flex; gap: 8px; }
         
-        model-viewer { width: 100%; height: 100%; --progress-bar-color: transparent; }
+        .radio-btn { 
+            background: #e5b13a; border: none; padding: 10px; 
+            border-radius: 2px; cursor: pointer; font-weight: bold; 
+            display: flex; align-items: center; justify-content: center;
+        }
+
+        .lock-active { background: #ff4444; color: white; }
+        
+        model-viewer { width: 100%; height: 100%; }
         #input_video { display: none; }
+
+        /* Hidden AR button slot to satisfy model-viewer requirements without showing it */
+        [slot="ar-button"] { display: none; }
     </style>
 </head>
 <body>
@@ -32,9 +43,10 @@
     <div id="static-player">
         <div class="info-box">
             <div id="track-display">TRACK: Die House</div>
-            <div style="font-size: 9px; color: #888;">SPATIAL PHASE: CORRECTED</div>
+            <div id="lock-status" style="font-size: 9px; color: #888;">STATUS: HAND TRACKING</div>
         </div>
         <div class="btn-group">
+            <button class="radio-btn" onclick="toggleLock()" id="lockBtn">🔓</button>
             <button class="radio-btn" onclick="togglePlay()" id="playBtn">PLAY</button>
             <button class="radio-btn" onclick="nextTrack()">NEXT</button>
         </div>
@@ -43,17 +55,21 @@
     <model-viewer 
         id="ar-radio"
         src="old_radio.glb" 
-        ar ar-modes="webxr" 
+        ar 
+        ar-modes="webxr scene-viewer quick-look" 
         camera-controls
-        interaction-prompt="none">
-        <button slot="ar-button" class="radio-btn" style="position:absolute; bottom:20px; left:50%; transform:translateX(-50%);">START AR</button>
+        interaction-prompt="none"
+        shadow-intensity="1">
     </model-viewer>
 
     <script>
         const viewer = document.querySelector('#ar-radio');
         const trackDisplay = document.getElementById('track-display');
         const playBtn = document.getElementById('playBtn');
+        const lockBtn = document.getElementById('lockBtn');
+        const lockStatus = document.getElementById('lock-status');
 
+        let isLocked = false;
         let audioCtx, source, biquadFilter, panner, gainNode;
         
         const playlist = [
@@ -64,19 +80,31 @@
         let audio = new Audio(playlist[trackIdx].file);
         audio.loop = true;
 
+        // Toggle Lock Logic
+        function toggleLock() {
+            isLocked = !isLocked;
+            if (isLocked) {
+                lockBtn.innerText = "🔒";
+                lockBtn.classList.add('lock-active');
+                lockStatus.innerText = "STATUS: SENSOR LOCKED (MOVE PHONE)";
+                // Enable standard touch/gyro behavior by allowing viewer to handle inputs
+                viewer.cameraControls = true; 
+            } else {
+                lockBtn.innerText = "🔓";
+                lockBtn.classList.remove('lock-active');
+                lockStatus.innerText = "STATUS: HAND TRACKING";
+            }
+        }
+
         function initAudio() {
             if (!audioCtx) {
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)();
                 source = audioCtx.createMediaElementSource(audio);
-                
                 biquadFilter = audioCtx.createBiquadFilter();
                 biquadFilter.type = "bandpass";
                 biquadFilter.frequency.value = 1600;
-
                 panner = audioCtx.createPanner();
                 panner.panningModel = 'HRTF';
-                panner.distanceModel = 'inverse';
-                
                 gainNode = audioCtx.createGain();
 
                 source.connect(biquadFilter);
@@ -88,26 +116,14 @@
 
         function updateSpatialSound() {
             if (!panner || !gainNode) return;
-
             const orbit = viewer.getCameraOrbit(); 
-            // We add Math.PI (180 deg) here to flip the audio orientation
             const theta = orbit.theta + Math.PI; 
-
-            // Calculate directionality (Inverted Z to fix reverse effect)
             const zPos = -Math.cos(theta); 
             const xPos = Math.sin(theta);
-
             panner.setPosition(xPos, 0, zPos);
-
-            // Volume/Muffle calculation logic
-            // When zPos is 1, it's facing front. When -1, it's facing back.
-            const orientationFactor = (zPos + 1) / 2; // 0 to 1 range
-            
-            const volume = Math.max(0.15, orientationFactor);
-            gainNode.gain.setTargetAtTime(volume, audioCtx.currentTime, 0.05);
-
-            const muffleFreq = 600 + (1400 * orientationFactor);
-            biquadFilter.frequency.setTargetAtTime(muffleFreq, audioCtx.currentTime, 0.05);
+            const orientationFactor = (zPos + 1) / 2;
+            gainNode.gain.setTargetAtTime(Math.max(0.15, orientationFactor), audioCtx.currentTime, 0.05);
+            biquadFilter.frequency.setTargetAtTime(600 + (1400 * orientationFactor), audioCtx.currentTime, 0.05);
         }
 
         viewer.addEventListener('camera-change', updateSpatialSound);
@@ -135,11 +151,14 @@
         hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
 
         hands.onResults((results) => {
-            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+            // ONLY apply hand tracking if the lock is NOT active
+            if (!isLocked && results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                 const palm = results.multiHandLandmarks[0][9];
                 const deg = (palm.x - 0.5) * 180;
                 const tilt = (palm.y - 0.5) * 60 + 75;
+                
                 viewer.cameraOrbit = `${deg}deg ${tilt}deg auto`;
+                
                 const vPos = (0.5 - palm.y) * 150;
                 viewer.style.transform = `translateY(${vPos}px)`;
             }
@@ -151,6 +170,11 @@
             width: 1280, height: 720, facingMode: "environment"
         });
         camera.start();
+        
+        // Auto-start AR mode if possible on load (Note: most browsers still require a click)
+        window.addEventListener('load', () => {
+            // viewer.activateAR(); // Uncomment if you want to force AR entry immediately
+        });
     </script>
 </body>
 </html>
