@@ -1,213 +1,111 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>3D Radio - AR Orbit</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>AR Radio Game</title>
+    <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+    
     <style>
-        body { margin: 0; overflow: hidden; background: #050505; font-family: 'Segoe UI', sans-serif; }
-        
-        #radio-ui {
-            background: rgba(15, 15, 15, 0.95);
-            color: #00ffcc;
-            padding: 20px;
-            border-radius: 15px;
-            border: 1px solid #333;
-            text-align: center;
-            width: 220px;
-            opacity: 0;
-            pointer-events: none;
-            transition: opacity 0.3s;
-        }
-
-        .controls button {
-            background: #222;
-            color: #00ffcc;
+        /* Modernized Audio UI */
+        #ui-overlay {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 280px;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(10px);
             border: 1px solid #00ffcc;
-            padding: 8px 12px;
-            margin: 5px;
+            border-radius: 15px;
+            padding: 15px;
+            color: white;
+            text-align: center;
+            z-index: 1000;
+            display: none; /* Hidden until marker found */
+        }
+        .btn-row { display: flex; justify-content: space-around; margin-top: 10px; }
+        button {
+            background: #00ffcc;
+            border: none;
+            padding: 10px;
             border-radius: 5px;
-            font-size: 12px;
+            font-weight: bold;
             cursor: pointer;
         }
-
-        #start-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.9); color: white;
-            display: flex; flex-direction: column; justify-content: center; align-items: center;
-            z-index: 1000; cursor: pointer;
-        }
     </style>
-
-    <script type="importmap">
-        {
-            "imports": {
-                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-            }
-        }
-    </script>
 </head>
-<body>
 
-    <div id="start-overlay">
-        <h2>3D RADIO AR</h2>
-        <p>Tap to initialize sensors & audio</p>
-    </div>
+<body style="margin: 0; overflow: hidden;">
 
-    <div id="radio-ui">
-        <div id="track-name" style="margin-bottom:10px; font-weight:bold;">---</div>
-        <div class="controls">
-            <button id="btn-play">PLAY</button>
-            <button id="btn-pause">PAUSE</button>
-            <button id="btn-next">NEXT</button>
+    <div id="ui-overlay">
+        <div id="track-name">Radio Off</div>
+        <div class="btn-row">
+            <button onclick="playMusic()">PLAY</button>
+            <button onclick="pauseMusic()">PAUSE</button>
+            <button onclick="nextMusic()">NEXT</button>
         </div>
     </div>
 
-    <script type="module">
-        import * as THREE from 'three';
-        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-        import { TransformControls } from 'three/addons/controls/TransformControls.js';
-        import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+    <a-scene embedded arjs="sourceType: webcam; debugUIEnabled: false;">
+        
+        <a-assets>
+            <a-asset-item id="radio-model" src="old_radio.glb"></a-asset-item>
+        </a-assets>
 
+        <a-marker preset="hiro" id="radio-marker">
+            
+            <a-entity 
+                id="radio-entity"
+                gltf-model="#radio-model" 
+                scale="1 1 1" 
+                position="0 0 0"
+                animation="property: rotation; to: 0 360 0; loop: true; dur: 10000; easing: linear">
+            </a-entity>
+
+        </a-marker>
+
+        <a-entity camera></a-entity>
+    </a-scene>
+
+    <script>
         // --- Audio Logic ---
         const tracks = [
-            { src: 'cuphead-ost-die-house-music.mp3', name: 'Cuphead: Die House' },
-            { src: 'Quantum Mechanics.mp3', name: 'Quantum Mechanics' }
+            { src: 'cuphead-ost-die-house-music.mp3', name: 'Cuphead - Die House' },
+            { src: encodeURI('Quantum Mechanics.mp3'), name: 'Quantum Mechanics' }
         ];
-        let trackIdx = 0;
-        const audio = new Audio(tracks[trackIdx].src);
-        const trackDisplay = document.getElementById('track-name');
-        trackDisplay.textContent = tracks[trackIdx].name;
+        let currentIdx = 0;
+        let audio = new Audio(tracks[currentIdx].src);
 
-        document.getElementById('btn-play').onclick = () => audio.play();
-        document.getElementById('btn-pause').onclick = () => audio.pause();
-        document.getElementById('btn-next').onclick = () => {
-            trackIdx = (trackIdx + 1) % tracks.length;
-            audio.src = tracks[trackIdx].src;
-            trackDisplay.textContent = tracks[trackIdx].name;
+        const trackName = document.getElementById('track-name');
+        const ui = document.getElementById('ui-overlay');
+        const marker = document.getElementById('radio-marker');
+
+        // Show UI only when marker is detected
+        marker.addEventListener('markerFound', () => {
+            ui.style.display = 'block';
+            trackName.innerText = tracks[currentIdx].name;
+        });
+
+        marker.addEventListener('markerLost', () => {
+            ui.style.display = 'none';
+        });
+
+        function playMusic() { audio.play(); }
+        function pauseMusic() { audio.pause(); }
+        function nextMusic() {
+            audio.pause();
+            currentIdx = (currentIdx + 1) % tracks.length;
+            audio = new Audio(tracks[currentIdx].src);
+            trackName.innerText = tracks[currentIdx].name;
             audio.play();
-        };
-
-        // --- Scene Setup ---
-        const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(window.devicePixelRatio);
-        document.body.appendChild(renderer.domElement);
-
-        const labelRenderer = new CSS2DRenderer();
-        labelRenderer.setSize(window.innerWidth, window.innerHeight);
-        labelRenderer.domElement.style.position = 'absolute';
-        labelRenderer.domElement.style.top = '0';
-        labelRenderer.domElement.style.pointerEvents = 'none';
-        document.body.appendChild(labelRenderer.domElement);
-
-        scene.add(new THREE.AmbientLight(0xffffff, 2));
-        const sun = new THREE.DirectionalLight(0xffffff, 2);
-        sun.position.set(5, 10, 7);
-        scene.add(sun);
-
-        // --- AR Camera Movement (Phone Moving Around Radio) ---
-        let lon = 0, lat = 0;
-        let phi = 0, theta = 0;
-        const distance = 5; // How far the "phone" is from the radio
-
-        function updateCamera() {
-            lat = Math.max(-85, Math.min(85, lat));
-            phi = THREE.MathUtils.degToRad(90 - lat);
-            theta = THREE.MathUtils.degToRad(lon);
-
-            camera.position.x = distance * Math.sin(phi) * Math.cos(theta);
-            camera.position.y = distance * Math.cos(phi);
-            camera.position.z = distance * Math.sin(phi) * Math.sin(theta);
-            camera.lookAt(0, 0, 0);
         }
 
-        // Sensor inputs
-        function onOrientation(e) {
-            // We use gamma for left/right orbit and beta for up/down orbit
-            lon = e.gamma * 2; 
-            lat = (e.beta - 90) * 2;
-        }
-
-        // Permission & Overlay
-        document.getElementById('start-overlay').onclick = function() {
-            this.style.display = 'none';
-            if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-                DeviceOrientationEvent.requestPermission().then(s => {
-                    if(s === 'granted') window.addEventListener('deviceorientation', onOrientation);
-                });
-            } else {
-                window.addEventListener('deviceorientation', onOrientation);
-            }
-        };
-
-        // --- Load Model & Interaction ---
-        let radio;
-        const uiDiv = document.getElementById('radio-ui');
-        const raycaster = new THREE.Raycaster();
-        const mouse = new THREE.Vector2();
-        let isMovingRadio = false;
-
-        new GLTFLoader().load('old_radio.glb', (gltf) => {
-            radio = gltf.scene;
-            scene.add(radio);
-
-            const uiObj = new CSS2DObject(uiDiv);
-            uiObj.position.set(0, 1.2, 0);
-            radio.add(uiObj);
-
-            const tControls = new TransformControls(camera, renderer.domElement);
-            tControls.attach(radio);
-            tControls.setMode('translate');
-            tControls.setSize(0.7); // Smaller arrows for mobile
-            scene.add(tControls);
-
-            tControls.addEventListener('dragging-changed', (e) => {
-                isMovingRadio = e.value;
-            });
-        });
-
-        // Hover detection
-        window.addEventListener('mousemove', (e) => {
-            mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-            mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
-        });
-        
-        // Touch for hover on phone
-        window.addEventListener('touchstart', (e) => {
-            mouse.x = (e.touches[0].clientX / window.innerWidth) * 2 - 1;
-            mouse.y = -(e.touches[0].clientY / window.innerHeight) * 2 + 1;
-        });
-
-        function animate() {
-            requestAnimationFrame(animate);
-            
-            // Only orbit if we aren't busy dragging the radio
-            if (!isMovingRadio) {
-                updateCamera();
-            }
-
-            if (radio) {
-                raycaster.setFromCamera(mouse, camera);
-                const hits = raycaster.intersectObject(radio, true);
-                uiDiv.style.opacity = hits.length > 0 ? '1' : '0';
-                uiDiv.style.pointerEvents = hits.length > 0 ? 'auto' : 'none';
-            }
-
-            renderer.render(scene, camera);
-            labelRenderer.render(scene, camera);
-        }
-        animate();
-
-        window.onresize = () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            labelRenderer.setSize(window.innerWidth, window.innerHeight);
-        };
+        // --- Movement Fix ---
+        // Instead of the arrows moving the radio, 
+        // the radio is locked to the marker on your desk. 
+        // You move your phone around the paper to see different angles.
     </script>
 </body>
 </html>
