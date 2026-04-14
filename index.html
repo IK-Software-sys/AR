@@ -3,102 +3,105 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quantum Radio AR</title>
+    <title>Advanced AR Controller</title>
     <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.4.0/model-viewer.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 
     <style>
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; color: #fff; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow: hidden; }
-        model-viewer { width: 100%; height: 100%; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; color: #fff; font-family: sans-serif; overflow: hidden; }
+        model-viewer { width: 100%; height: 100%; z-index: 1; }
 
-        /* Floating Interface */
-        #hand-ui {
+        /* Floating Player Interface */
+        #player-ui {
             position: absolute;
-            pointer-events: none;
+            pointer-events: auto; /* Buttons need to be clickable */
             display: none;
-            flex-direction: column;
-            align-items: center;
-            gap: 10px;
+            background: rgba(20, 20, 20, 0.85);
+            backdrop-filter: blur(15px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 12px;
+            border-radius: 15px;
             z-index: 1000;
-            transition: transform 0.1s ease-out;
+            width: 180px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+            flex-direction: column;
+            gap: 8px;
         }
 
-        .glass-card {
-            background: rgba(255, 255, 255, 0.15);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            padding: 15px;
-            border-radius: 20px;
-            text-align: center;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-        }
-
-        .track-info { font-size: 14px; font-weight: bold; margin-bottom: 8px; color: #e5b13a; }
+        .track-label { font-size: 11px; color: #aaa; text-transform: uppercase; letter-spacing: 1px; }
+        #track-name { font-size: 14px; font-weight: bold; color: #e5b13a; white-space: nowrap; overflow: hidden; }
         
-        .pinch-indicator {
-            width: 40px;
-            height: 40px;
-            border: 3px solid #e5b13a;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-            font-size: 10px;
-            transition: all 0.2s;
-        }
-
-        .pinching { background: #e5b13a; transform: scale(0.8); color: #000; }
-
-        #status { 
-            position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
-            background: rgba(0,0,0,0.6); padding: 5px 15px; border-radius: 20px; font-size: 12px;
-        }
+        .controls { display: flex; justify-content: space-between; align-items: center; margin-top: 5px; }
+        .btn { background: #333; border: none; color: white; padding: 8px; border-radius: 5px; cursor: pointer; font-size: 12px; flex: 1; margin: 2px; }
+        .btn:active { background: #e5b13a; color: black; }
 
         #input_video { display: none; }
+        #ar-btn { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 1001; background: #e5b13a; border: none; padding: 15px 30px; border-radius: 30px; font-weight: bold; }
     </style>
 </head>
 <body>
 
     <video id="input_video"></video>
-    <div id="status">Point camera at hand to control</div>
-
-    <div id="hand-ui">
-        <div class="glass-card">
-            <div id="track-name" class="track-info">Quantum Mechanics</div>
-            <div style="font-size: 10px;">PINCH TO SWAP / PLAY</div>
+    
+    <div id="player-ui">
+        <div class="track-label">Now Playing</div>
+        <div id="track-name">Quantum Mechanics</div>
+        <div class="controls">
+            <button class="btn" onclick="togglePlay()" id="playBtn">Play</button>
+            <button class="btn" onclick="nextTrack()">Next ⏭</button>
         </div>
-        <div id="cursor" class="pinch-indicator">AR</div>
     </div>
+
+    <button id="ar-btn" onclick="startAR()">ACTIVATE AR</button>
 
     <model-viewer 
         id="ar-radio"
         src="old_radio.glb" 
         ar ar-modes="webxr" 
-        camera-controls 
+        camera-controls
+        interaction-prompt="none"
         shadow-intensity="1">
-        <button slot="ar-button" style="background: #e5b13a; border-radius: 10px; border: none; padding: 15px; position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);">
-            LAUNCH AR
-        </button>
     </model-viewer>
 
     <script>
         const viewer = document.querySelector('#ar-radio');
-        const handUI = document.getElementById('hand-ui');
+        const playerUI = document.getElementById('player-ui');
         const trackText = document.getElementById('track-name');
-        const cursor = document.getElementById('cursor');
+        const playBtn = document.getElementById('playBtn');
 
-        // Audio Playlist
+        // Audio Management
         const playlist = [
             { name: "Quantum Mechanics", file: "quantum-mechanics.mp3" },
             { name: "Die House (Cuphead)", file: "cuphead-ost-die-house-music.mp3" }
         ];
-        let currentTrackIdx = 0;
-        let audio = new Audio(playlist[currentTrackIdx].file);
-        let isPinching = false;
+        let trackIdx = 0;
+        let audio = new Audio(playlist[trackIdx].file);
 
-        // Hand Tracking Logic
+        function togglePlay() {
+            if (audio.paused) {
+                audio.play();
+                playBtn.innerText = "Pause";
+            } else {
+                audio.pause();
+                playBtn.innerText = "Play";
+            }
+        }
+
+        function nextTrack() {
+            audio.pause();
+            trackIdx = (trackIdx + 1) % playlist.length;
+            audio = new Audio(playlist[trackIdx].file);
+            trackText.innerText = playlist[trackIdx].name;
+            audio.play();
+            playBtn.innerText = "Pause";
+        }
+
+        function startAR() {
+            viewer.activateAR();
+        }
+
+        // Hand Tracking with MediaPipe
         const hands = new Hands({
             locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
         });
@@ -106,69 +109,48 @@
         hands.setOptions({
             maxNumHands: 1,
             modelComplexity: 1,
-            minDetectionConfidence: 0.7,
-            minTrackingConfidence: 0.7
+            minDetectionConfidence: 0.6,
+            minTrackingConfidence: 0.6
         });
 
         hands.onResults((results) => {
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                handUI.style.display = 'flex';
+                playerUI.style.display = 'flex';
                 const landmarks = results.multiHandLandmarks[0];
                 
-                // Position UI near the Index Finger Tip
-                const indexTip = landmarks[8];
-                const x = indexTip.x * window.innerWidth;
-                const y = indexTip.y * window.innerHeight;
-                handUI.style.transform = `translate(${x}px, ${y}px)`;
+                // UI Positioning (Follows the hand)
+                const palm = landmarks[9];
+                const x = palm.x * window.innerWidth;
+                const y = palm.y * window.innerHeight;
+                playerUI.style.left = `${x - 90}px`;
+                playerUI.style.top = `${y - 120}px`;
 
-                // Rotation Logic (mapped to hand position)
-                const rot = (landmarks[9].x - 0.5) * 180;
-                viewer.cameraOrbit = `${rot}deg 75deg auto`;
+                // 1. HORIZONTAL: Rotation (Yaw)
+                const rotateY = (palm.x - 0.5) * 180;
 
-                // Pinch Logic (Thumb [4] to Index [8])
-                const thumbTip = landmarks[4];
-                const dist = Math.hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y);
+                // 2. VERTICAL: Tilt (Pitch)
+                // When hand is high (y is low), tilt back. When hand is low (y is high), tilt forward.
+                const tiltX = (palm.y - 0.5) * 60 + 75; // Centers around 75deg
 
-                if (dist < 0.04) {
-                    if (!isPinching) {
-                        isPinching = true;
-                        cursor.classList.add('pinching');
-                        handlePinchAction();
-                    }
-                } else {
-                    isPinching = false;
-                    cursor.classList.remove('pinching');
-                }
+                // Apply combined Rotation and Tilt
+                viewer.cameraOrbit = `${rotateY}deg ${tiltX}deg auto`;
+
+                // 3. VERTICAL: Height Position
+                // We map the Y hand coordinate to the model's vertical translation
+                const verticalPos = (0.5 - palm.y) * 2; // Hand up = positive value
+                viewer.style.transform = `translateY(${verticalPos * 50}px)`;
+
             } else {
-                handUI.style.display = 'none';
+                playerUI.style.display = 'none';
             }
         });
 
-        function handlePinchAction() {
-            // Toggle logic: If paused, play. If playing, switch track.
-            if (audio.paused) {
-                audio.play().catch(e => console.log("Unlock audio via screen tap first"));
-            } else {
-                audio.pause();
-                currentTrackIdx = (currentTrackIdx + 1) % playlist.length;
-                audio = new Audio(playlist[currentTrackIdx].file);
-                trackText.innerText = playlist[currentTrackIdx].name;
-                audio.play();
-            }
-        }
-
-        // Camera Start
         const videoElement = document.getElementById('input_video');
         const camera = new Camera(videoElement, {
             onFrame: async () => { await hands.send({image: videoElement}); },
             width: 1280, height: 720, facingMode: "environment"
         });
         camera.start();
-
-        // One-time click to enable audio (Browser Security Requirement)
-        document.body.addEventListener('click', () => {
-            console.log("Audio Context Unlocked");
-        }, { once: true });
     </script>
 </body>
 </html>
