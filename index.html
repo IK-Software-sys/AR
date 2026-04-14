@@ -2,56 +2,135 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Inconvenient Gyro-AR</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive 3D Radio</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; }
-        video { position: fixed; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: -1; }
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #1a1a1a; /* Dark background to make the model pop */
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+        }
         
-        #overlay {
-            position: fixed;
-            top: 10px;
-            width: 100%;
-            text-align: center;
-            color: #00ffcc;
-            font-family: monospace;
-            z-index: 10;
+        #canvas-container { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; }
+        
+        /* CSS2D container must let clicks pass through to the 3D canvas beneath */
+        #css-container { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; }
+        
+        /* Wrapper attached to the 3D model */
+        .model-ui-wrapper {
+            position: relative;
+            pointer-events: auto; /* Re-enable clicks for the UI */
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            transform: translate3d(-50%, -50%, 0);
+        }
+
+        /* 4-Arrows Move Icon (Drag Handle) */
+        .drag-handle {
+            width: 44px;
+            height: 44px;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+            cursor: grab;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+            user-select: none;
+            touch-action: none; /* Prevent screen scrolling on mobile when dragging */
+            transition: transform 0.2s, background 0.2s;
+            color: #333;
+        }
+        
+        .drag-handle:active {
+            cursor: grabbing;
+            transform: scale(0.9);
+            background: #d4d4d4;
+        }
+
+        /* Music Player Hover Interface */
+        .music-player {
+            background: rgba(20, 20, 20, 0.85);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 16px;
+            border-radius: 12px;
+            color: white;
+            width: 240px;
+            
+            /* Hidden by default, slides in on hover */
+            opacity: 0;
+            transform: translateX(-20px);
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
             pointer-events: none;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.6);
         }
 
-        #ui-panel {
-            position: fixed;
-            bottom: 30px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0,0,0,0.8);
-            padding: 15px;
-            border: 2px solid #555;
+        /* Trigger hover interface when hovering over the wrapper OR the drag handle */
+        .model-ui-wrapper:hover .music-player {
+            opacity: 1;
+            transform: translateX(0);
+            pointer-events: auto;
+        }
+
+        .music-player h4 { 
+            margin: 0 0 12px 0; 
+            font-size: 15px; 
+            font-weight: 500; 
+            text-align: center; 
+            white-space: nowrap; 
+            overflow: hidden; 
+            text-overflow: ellipsis; 
+            color: #4CAF50;
+        }
+        
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+        }
+        
+        .controls button {
+            flex: 1;
+            padding: 8px 0;
+            background: #333;
             color: white;
-            display: none;
-            z-index: 100;
+            border: 1px solid #444;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 13px;
+            transition: all 0.2s;
         }
+        
+        .controls button:hover { background: #555; }
+        .controls button.active { background: #4CAF50; border-color: #4CAF50; }
 
-        button {
-            padding: 10px;
-            background: #444;
-            color: white;
-            border: 1px solid #888;
-            margin: 5px;
-        }
-
-        #calibrate {
-            position: fixed;
-            top: 50%;
-            left: 50%;
+        /* Loading Screen */
+        #loading {
+            position: absolute;
+            top: 50%; left: 50%;
             transform: translate(-50%, -50%);
-            padding: 20px;
-            background: red;
             color: white;
-            font-weight: bold;
-            z-index: 200;
+            font-size: 18px;
+            background: rgba(0,0,0,0.8);
+            padding: 20px 30px;
+            border-radius: 8px;
+            z-index: 100;
+            border: 1px solid #333;
         }
     </style>
+</head>
+<body>
+    <div id="loading">Loading Environment & 3D Model...</div>
+    
+    <div id="canvas-container"></div>
+    <div id="css-container"></div>
+
+    <audio id="audio-player" preload="auto"></audio>
 
     <script type="importmap">
         {
@@ -61,129 +140,256 @@
             }
         }
     </script>
-</head>
-<body>
-
-    <div id="overlay">
-        STATUS: SENSOR SCANNING<br>
-        FIND THE RADIO IN THE ROOM
-    </div>
-
-    <button id="calibrate">GRANT PERMISSIONS & SPAWN RADIO</button>
-
-    <div id="ui-panel">
-        <div id="tn">Radio Idle</div>
-        <button onclick="playA()">PLAY</button>
-        <button onclick="pauseA()">PAUSE</button>
-        <button onclick="nextA()">NEXT</button>
-    </div>
-
-    <video id="webcam" autoplay playsinline></video>
 
     <script type="module">
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+        import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
-        // --- 1. Audio Logic ---
-        const tracks = [
-            { src: 'cuphead-ost-die-house-music.mp3', name: 'Cuphead' },
-            { src: encodeURI('Quantum Mechanics.mp3'), name: 'Quantum' }
-        ];
-        let idx = 0;
-        let audio = new Audio(tracks[idx].src);
-        window.playA = () => audio.play();
-        window.pauseA = () => audio.pause();
-        window.nextA = () => {
-            audio.pause();
-            idx = (idx + 1) % tracks.length;
-            audio = new Audio(tracks[idx].src);
-            document.getElementById('tn').innerText = tracks[idx].name;
-            audio.play();
-        };
-
-        // --- 2. Camera Background ---
-        const video = document.getElementById('webcam');
-        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
-            .then(stream => video.srcObject = stream);
-
-        // --- 3. Three.js Engine ---
+        // ==========================================
+        // 1. SCENE SETUP (Photorealistic Environment)
+        // ==========================================
         const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        
-        // This is the "Hard" part: We wrap the camera in a group to handle orientation
-        const cameraGroup = new THREE.Group();
-        scene.add(cameraGroup);
-        cameraGroup.add(camera);
 
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(0, 1.5, 3.5);
+
+        // WebGL Renderer with High-Quality Settings
+        const canvasContainer = document.getElementById('canvas-container');
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        document.body.appendChild(renderer.domElement);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        
+        // Tone mapping for realistic lighting/reflections ("like they're real there")
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.0;
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        canvasContainer.appendChild(renderer.domElement);
 
-        scene.add(new THREE.AmbientLight(0xffffff, 2));
+        // CSS2D Renderer (Injects standard HTML into 3D coordinates)
+        const cssContainer = document.getElementById('css-container');
+        const labelRenderer = new CSS2DRenderer();
+        labelRenderer.setSize(window.innerWidth, window.innerHeight);
+        cssContainer.appendChild(labelRenderer.domElement);
 
-        let radio;
-        new GLTFLoader().load('old_radio.glb', (gltf) => {
-            radio = gltf.scene;
-            radio.position.set(0, 0, -5); // Radio is 5 meters in front of your initial "North"
-            scene.add(radio);
+        // Generate realistic HDRI-like reflections automatically
+        const pmremGenerator = new THREE.PMREMGenerator(renderer);
+        scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
+        scene.add(ambientLight);
+        
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+        dirLight.position.set(5, 10, 5);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 2048;
+        dirLight.shadow.mapSize.height = 2048;
+        scene.add(dirLight);
+
+        // Invisible floor plane to catch realistic shadows
+        const floorGeo = new THREE.PlaneGeometry(100, 100);
+        const floorMat = new THREE.ShadowMaterial({ opacity: 0.6 });
+        const floor = new THREE.Mesh(floorGeo, floorMat);
+        floor.rotation.x = -Math.PI / 2;
+        floor.receiveShadow = true;
+        scene.add(floor);
+
+        // Standard Orbit Controls to look around
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.target.set(0, 0.5, 0);
+
+        // Group to hold the Radio and its UI together so they move as one
+        let radioGroup = new THREE.Group();
+        scene.add(radioGroup);
+
+        // ==========================================
+        // 2. HTML UI CREATION & AUDIO LOGIC
+        // ==========================================
+        const songs = [
+            { title: "Cuphead - Die House", src: "cuphead-ost-die-house-music.mp3" },
+            { title: "Quantum Mechanics", src: "Quantum Mechanics.mp3" }
+        ];
+        let currentSongIndex = 0;
+        const audioPlayer = document.getElementById('audio-player');
+        audioPlayer.src = songs[currentSongIndex].src;
+
+        // Container wrapper
+        const uiWrapper = document.createElement('div');
+        uiWrapper.className = 'model-ui-wrapper';
+
+        // 4-Arrows Drag Handle (✥ character)
+        const dragHandle = document.createElement('div');
+        dragHandle.className = 'drag-handle';
+        dragHandle.innerHTML = '✥';
+        uiWrapper.appendChild(dragHandle);
+
+        // Music Player Interface
+        const musicPlayer = document.createElement('div');
+        musicPlayer.className = 'music-player';
+        
+        const titleEl = document.createElement('h4');
+        titleEl.innerText = songs[currentSongIndex].title;
+        musicPlayer.appendChild(titleEl);
+
+        const btnContainer = document.createElement('div');
+        btnContainer.className = 'controls';
+
+        const playBtn = document.createElement('button');
+        playBtn.innerText = '▶ Play';
+        
+        const pauseBtn = document.createElement('button');
+        pauseBtn.innerText = '⏸ Pause';
+        
+        const nextBtn = document.createElement('button');
+        nextBtn.innerText = '⏭ Next';
+
+        btnContainer.appendChild(playBtn);
+        btnContainer.appendChild(pauseBtn);
+        btnContainer.appendChild(nextBtn);
+        musicPlayer.appendChild(btnContainer);
+        uiWrapper.appendChild(musicPlayer);
+
+        // Bind the HTML wrapper to a CSS2DObject in Three.js
+        const uiObject = new CSS2DObject(uiWrapper);
+        radioGroup.add(uiObject);
+
+        // Audio Button Listeners
+        playBtn.addEventListener('click', () => {
+            audioPlayer.play();
+            playBtn.classList.add('active');
+            pauseBtn.classList.remove('active');
         });
 
-        // --- 4. The Raw Gyroscope Logic ---
-        function onDeviceOrientation(e) {
-            // Raw Euler conversion from phone tilt to 3D space
-            const alpha = e.alpha ? THREE.MathUtils.degToRad(e.alpha) : 0; // Z
-            const beta = e.beta ? THREE.MathUtils.degToRad(e.beta) : 0;   // X
-            const gamma = e.gamma ? THREE.MathUtils.degToRad(e.gamma) : 0; // Y
+        pauseBtn.addEventListener('click', () => {
+            audioPlayer.pause();
+            pauseBtn.classList.add('active');
+            playBtn.classList.remove('active');
+        });
 
-            // Manually constructing the rotation matrix (Inconvenient & precise)
-            const orient = window.orientation ? THREE.MathUtils.degToRad(window.orientation) : 0;
-            setObjectQuaternion(camera.quaternion, alpha, beta, gamma, orient);
-        }
+        nextBtn.addEventListener('click', () => {
+            currentSongIndex = (currentSongIndex + 1) % songs.length;
+            audioPlayer.src = songs[currentSongIndex].src;
+            titleEl.innerText = songs[currentSongIndex].title;
+            audioPlayer.play();
+            playBtn.classList.add('active');
+            pauseBtn.classList.remove('active');
+        });
 
-        // Helper to map mobile sensors to Three.js world coordinates
-        const setObjectQuaternion = function() {
-            const zee = new THREE.Vector3(0, 0, 1);
-            const euler = new THREE.Euler();
-            const q0 = new THREE.Quaternion();
-            const q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5));
+        // ==========================================
+        // 3. LOAD GLB MODEL
+        // ==========================================
+        const loader = new GLTFLoader();
+        loader.load(
+            'old_radio.glb',
+            function (gltf) {
+                const model = gltf.scene;
+                
+                // Automatically center and calculate size
+                const box = new THREE.Box3().setFromObject(model);
+                const center = box.getCenter(new THREE.Vector3());
+                const size = box.getSize(new THREE.Vector3());
+                
+                // Adjust model so it sits perfectly flush on the floor
+                model.position.x = -center.x;
+                model.position.y = -box.min.y;
+                model.position.z = -center.z;
 
-            return function(quaternion, alpha, beta, gamma, orient) {
-                euler.set(beta, alpha, -gamma, 'YXZ');
-                quaternion.setFromEuler(euler);
-                quaternion.multiply(q1);
-                quaternion.multiply(q0.setFromAxisAngle(zee, -orient));
-            };
-        }();
-
-        // --- 5. Activation ---
-        document.getElementById('calibrate').addEventListener('click', function() {
-            this.style.display = 'none';
-            document.getElementById('ui-panel').style.display = 'block';
-            
-            if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-                DeviceOrientationEvent.requestPermission().then(state => {
-                    if (state === 'granted') window.addEventListener('deviceorientation', onDeviceOrientation);
+                // Enable realistic shadows on all sub-meshes
+                model.traverse((child) => {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                    }
                 });
-            } else {
-                window.addEventListener('deviceorientation', onDeviceOrientation);
+
+                radioGroup.add(model);
+                
+                // Position the UI precisely to the side of the radio based on its bounding box
+                uiObject.position.set(size.x / 2 + 0.3, size.y / 2, 0);
+
+                document.getElementById('loading').style.display = 'none';
+            },
+            undefined,
+            function (error) {
+                console.error(error);
+                document.getElementById('loading').innerHTML = "Error loading model.<br>Ensure files are in the same directory.";
+            }
+        );
+
+        // ==========================================
+        // 4. DRAG TO MOVE LOGIC
+        // ==========================================
+        let isDragging = false;
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        
+        // Invisible mathematical plane used to calculate drag intersections parallel to the floor
+        const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+        const planeIntersect = new THREE.Vector3();
+        let dragOffset = new THREE.Vector3();
+
+        // Stop clicks on the UI from registering as camera movements
+        uiWrapper.addEventListener('pointerdown', (e) => e.stopPropagation());
+
+        dragHandle.addEventListener('pointerdown', (e) => {
+            isDragging = true;
+            controls.enabled = false; // Freeze the camera while dragging the object
+
+            updateMouseCoords(e);
+            raycaster.setFromCamera(mouse, camera);
+            if (raycaster.ray.intersectPlane(dragPlane, planeIntersect)) {
+                // Calculate the offset between the mouse click and the actual object center
+                dragOffset.copy(radioGroup.position).sub(planeIntersect);
             }
         });
 
-        const raycaster = new THREE.Raycaster();
-        const center = new THREE.Vector2(0, 0); // Screen center for "hover"
+        window.addEventListener('pointerup', () => {
+            if (isDragging) {
+                isDragging = false;
+                controls.enabled = true; // Unfreeze camera
+            }
+        });
+
+        window.addEventListener('pointermove', (e) => {
+            if (!isDragging) return;
+
+            updateMouseCoords(e);
+            raycaster.setFromCamera(mouse, camera);
+            
+            if (raycaster.ray.intersectPlane(dragPlane, planeIntersect)) {
+                // Instantly update the 3D group's position
+                radioGroup.position.copy(planeIntersect.add(dragOffset));
+            }
+        });
+
+        function updateMouseCoords(e) {
+            // Convert standard screen coordinates to Three.js normalized device coordinates (-1 to +1)
+            mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+        }
+
+        // ==========================================
+        // 5. RENDER LOOP & RESIZING
+        // ==========================================
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            labelRenderer.setSize(window.innerWidth, window.innerHeight);
+        });
 
         function animate() {
             requestAnimationFrame(animate);
-            
-            // "Hover" is now defined as pointing your phone directly at the object
-            if (radio) {
-                raycaster.setFromCamera(center, camera);
-                const hit = raycaster.intersectObject(radio, true);
-                document.getElementById('ui-panel').style.opacity = hit.length > 0 ? "1" : "0.3";
-            }
-
+            controls.update(); // Required for camera damping
             renderer.render(scene, camera);
+            labelRenderer.render(scene, camera);
         }
+        
         animate();
     </script>
 </body>
