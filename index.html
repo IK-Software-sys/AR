@@ -2,126 +2,210 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Pro AR Radio</title>
-    <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive 3D Radio</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; }
-        #shared-video {
-            position: absolute; top: 0; left: 0;
-            width: 100%; height: 100%;
-            object-fit: cover; /* Fixes the zoom issue */
-            z-index: 1;
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #1a1a1a;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
-        #hand-canvas {
-            position: absolute; top: 0; left: 0;
-            width: 100%; height: 100%;
-            object-fit: cover; z-index: 2; pointer-events: none;
+        
+        /* The Audio Controls UI */
+        #radio-ui {
+            background: rgba(20, 20, 20, 0.9);
+            color: #fff;
+            padding: 15px;
+            border-radius: 12px;
+            text-align: center;
+            border: 1px solid #444;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            
+            /* Hidden by default, revealed via JS */
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+            width: 220px;
         }
-        a-scene { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 3; }
+
+        #track-name {
+            font-size: 14px;
+            margin-bottom: 10px;
+            font-weight: bold;
+            color: #4CAF50;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .controls button {
+            background: #333;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            margin: 0 4px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .controls button:hover {
+            background: #4CAF50;
+        }
     </style>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
 </head>
 <body>
 
-    <video id="shared-video" autoplay playsinline></video>
-    <canvas id="hand-canvas"></canvas>
+    <div id="radio-ui">
+        <div id="track-name">1. Die House (Cuphead OST)</div>
+        <div class="controls">
+            <button id="btn-play">▶ Play</button>
+            <button id="btn-pause">⏸ Pause</button>
+            <button id="btn-next">⏭ Next</button>
+        </div>
+    </div>
 
-    <a-scene embedded vr-mode-ui="enabled: false" renderer="alpha: true; antialias: true;">
-        <a-assets>
-            <a-asset-item id="radio-model" src="old_radio.glb"></a-asset-item>
-        </a-assets>
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { TransformControls } from 'three/addons/controls/TransformControls.js';
+        import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 
-        <a-camera position="0 1.6 0" look-controls="enabled: false">
-            <a-cursor fuse="true" fuse-timeout="1500" color="cyan" raycaster="objects: .clickable">
-                <a-animation begin="fusing" easing="ease-in" attribute="scale" fill="forwards" from="1 1 1" to="0.1 0.1 0.1" dur="1500"></a-animation>
-            </a-cursor>
-        </a-camera>
+        // --- 1. Audio Setup ---
+        const tracks = [
+            { src: 'cuphead-ost-die-house-music.mp3', name: '1. Die House (Cuphead OST)' },
+            { src: 'Quantum Mechanics.mp3', name: '2. Quantum Mechanics' }
+        ];
+        let currentTrackIdx = 0;
+        const audio = new Audio(tracks[currentTrackIdx].src);
+        audio.loop = true;
 
-        <a-entity id="radio-group" position="0 1.5 -2" visible="false">
-            <a-entity gltf-model="#radio-model" scale="1 1 1" rotation="0 180 0"></a-entity>
-            
-            <a-sphere id="move-dot" radius="0.1" color="yellow" position="0.6 0 0" class="draggable"></a-sphere>
-
-            <a-entity position="0 0.8 0">
-                <a-plane class="clickable" width="0.4" height="0.15" color="#333" position="-0.45 0 0" text="value: Song 1; align: center" onclick="playSong('song1')"></a-plane>
-                <a-plane class="clickable" width="0.4" height="0.15" color="#333" position="0 0 0" text="value: Song 2; align: center" onclick="playSong('song2')"></a-plane>
-                <a-plane class="clickable" width="0.4" height="0.15" color="#222" position="0.45 0 0" text="value: Play; align: center" onclick="resumeAudio()"></a-plane>
-                <a-plane class="clickable" width="0.4" height="0.15" color="#900" position="0 -0.25 0" text="value: Stop; align: center" onclick="pauseAudio()"></a-plane>
-            </a-entity>
-        </a-entity>
-
-        <a-light type="ambient" intensity="1.2"></a-light>
-        <a-light type="directional" position="1 2 1"></a-light>
-    </a-scene>
-
-    <audio id="audio-song1" src="825653__1love__1love_synth_unkown-undercurrents-[AudioTrimmer.com].wav"></audio>
-    <audio id="audio-song2" src="Quantum Mechanics.mp3"></audio>
-
-    <script>
-        const video = document.getElementById('shared-video');
-        const canvasElement = document.getElementById('hand-canvas');
-        const canvasCtx = canvasElement.getContext('2d');
-        const radioGroup = document.getElementById('radio-group');
-        let currentAudio = null;
-
-        async function init() {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-            video.srcObject = stream;
-            video.onloadedmetadata = () => {
-                const camera = new Camera(video, {
-                    onFrame: async () => {
-                        canvasElement.width = video.videoWidth;
-                        canvasElement.height = video.videoHeight;
-                        await hands.send({image: video});
-                    }
-                });
-                camera.start();
-            };
-        }
-
-        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-        hands.setOptions({ maxNumHands: 1, modelComplexity: 0, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
-
-        hands.onResults((results) => {
-            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                const landmarks = results.multiHandLandmarks[0];
-                drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 4});
-                drawLandmarks(canvasCtx, landmarks, {color: '#FF0000', radius: 3});
-
-                const indexTip = landmarks[8];
-                const thumbTip = landmarks[4];
-                const tx = (indexTip.x * 4) - 2;
-                const ty = (1 - indexTip.y) * 3;
-
-                // 1. FIST TO SPAWN (Stay put)
-                const isFist = landmarks[8].y > landmarks[6].y && landmarks[12].y > landmarks[10].y;
-                if (isFist && !radioGroup.getAttribute('visible')) {
-                    radioGroup.setAttribute('visible', 'true');
-                    radioGroup.setAttribute('position', `${tx} ${ty} -2`);
-                }
-
-                // 2. PINCH MOVE-DOT TO DRAG
-                const dist = Math.hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y);
-                if (dist < 0.05) {
-                    radioGroup.setAttribute('position', `${tx} ${ty} -2`);
-                }
-            }
+        const trackNameEl = document.getElementById('track-name');
+        
+        document.getElementById('btn-play').addEventListener('click', () => audio.play());
+        document.getElementById('btn-pause').addEventListener('click', () => audio.pause());
+        document.getElementById('btn-next').addEventListener('click', () => {
+            currentTrackIdx = (currentTrackIdx + 1) % tracks.length;
+            audio.src = tracks[currentTrackIdx].src;
+            trackNameEl.textContent = tracks[currentTrackIdx].name;
+            audio.play();
         });
 
-        function playSong(id) {
-            pauseAudio();
-            currentAudio = document.getElementById('audio-' + id);
-            currentAudio.play();
-        }
-        function pauseAudio() { if(currentAudio) currentAudio.pause(); }
-        function resumeAudio() { if(currentAudio) currentAudio.play(); }
+        // --- 2. Scene Setup ---
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(0, 2, 5);
 
-        init();
+        // WebGL Renderer (For the 3D Model)
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // CSS2D Renderer (For the HTML Overlay)
+        const labelRenderer = new CSS2DRenderer();
+        labelRenderer.setSize(window.innerWidth, window.innerHeight);
+        labelRenderer.domElement.style.position = 'absolute';
+        labelRenderer.domElement.style.top = '0px';
+        labelRenderer.domElement.style.pointerEvents = 'none'; // Let clicks pass through to 3D scene initially
+        document.body.appendChild(labelRenderer.domElement);
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
+        scene.add(ambientLight);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 2);
+        dirLight.position.set(5, 5, 5);
+        scene.add(dirLight);
+
+        // General Camera Orbit Controls
+        const orbitControls = new OrbitControls(camera, renderer.domElement);
+        orbitControls.enableDamping = true;
+
+        // --- 3. Load Model & Add Controls ---
+        let radioMesh = null;
+        const loader = new GLTFLoader();
+        
+        loader.load('old_radio.glb', (gltf) => {
+            radioMesh = gltf.scene;
+            scene.add(radioMesh);
+
+            // Add the UI element to float above the radio
+            const uiDiv = document.getElementById('radio-ui');
+            const uiObject = new CSS2DObject(uiDiv);
+            uiObject.position.set(0, 1.5, 0); // Adjust Y value to float above your specific model
+            radioMesh.add(uiObject);
+
+            // Setup Transform Controls (The 4-Arrow Gizmo)
+            // We attach it to the labelRenderer's DOM element so HTML clicks don't conflict
+            const transformControls = new TransformControls(camera, labelRenderer.domElement);
+            transformControls.attach(radioMesh);
+            transformControls.setMode('translate'); // Sets it to the arrow mode for moving
+            scene.add(transformControls);
+
+            // Disable OrbitControls while dragging the radio so the camera doesn't spin
+            transformControls.addEventListener('dragging-changed', (event) => {
+                orbitControls.enabled = !event.value;
+            });
+        });
+
+        // --- 4. Hover Detection (Raycasting) ---
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        const uiDiv = document.getElementById('radio-ui');
+        let isHoveringUI = false;
+
+        // Keep UI active if mouse is directly over the HTML panel
+        uiDiv.addEventListener('mouseenter', () => isHoveringUI = true);
+        uiDiv.addEventListener('mouseleave', () => isHoveringUI = false);
+
+        window.addEventListener('mousemove', (event) => {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        });
+
+        // --- 5. Animation Loop ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            orbitControls.update();
+
+            // Check if mouse is hovering over the 3D radio
+            if (radioMesh) {
+                raycaster.setFromCamera(mouse, camera);
+                const intersects = raycaster.intersectObject(radioMesh, true);
+                
+                // Show UI if hovering over 3D model OR hovering over the UI itself
+                if (intersects.length > 0 || isHoveringUI) {
+                    uiDiv.style.opacity = '1';
+                    uiDiv.style.pointerEvents = 'auto'; // Make buttons clickable
+                } else {
+                    uiDiv.style.opacity = '0';
+                    uiDiv.style.pointerEvents = 'none'; // Pass clicks through to scene
+                }
+            }
+
+            renderer.render(scene, camera);
+            labelRenderer.render(scene, camera);
+        }
+        animate();
+
+        // Handle Window Resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            labelRenderer.setSize(window.innerWidth, window.innerHeight);
+        });
     </script>
 </body>
 </html>
