@@ -2,66 +2,40 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D Radio AR Interface</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>3D Radio - AR Orbit</title>
     <style>
-        body {
-            margin: 0;
-            overflow: hidden;
-            background: radial-gradient(circle, #2c3e50 0%, #000000 100%);
-            font-family: sans-serif;
-        }
-
-        /* Hover UI for Audio */
+        body { margin: 0; overflow: hidden; background: #050505; font-family: 'Segoe UI', sans-serif; }
+        
         #radio-ui {
-            background: rgba(0, 0, 0, 0.85);
+            background: rgba(15, 15, 15, 0.95);
             color: #00ffcc;
-            padding: 15px;
-            border-radius: 10px;
-            border: 1px solid #00ffcc;
+            padding: 20px;
+            border-radius: 15px;
+            border: 1px solid #333;
             text-align: center;
-            width: 200px;
+            width: 220px;
             opacity: 0;
             pointer-events: none;
-            transition: opacity 0.3s ease;
-            box-shadow: 0 0 15px rgba(0, 255, 204, 0.3);
-        }
-
-        #track-name {
-            font-size: 12px;
-            margin-bottom: 10px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
+            transition: opacity 0.3s;
         }
 
         .controls button {
-            background: transparent;
-            color: white;
-            border: 1px solid white;
-            padding: 5px 10px;
-            cursor: pointer;
-            margin: 2px;
-            font-size: 12px;
-        }
-
-        .controls button:hover {
-            background: #00ffcc;
-            color: black;
-        }
-
-        /* Permission Button for Mobile */
-        #start-prompt {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: #00ffcc;
-            color: black;
-            padding: 20px;
+            background: #222;
+            color: #00ffcc;
+            border: 1px solid #00ffcc;
+            padding: 8px 12px;
+            margin: 5px;
             border-radius: 5px;
+            font-size: 12px;
             cursor: pointer;
-            z-index: 100;
-            font-weight: bold;
+        }
+
+        #start-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9); color: white;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            z-index: 1000; cursor: pointer;
         }
     </style>
 
@@ -76,10 +50,13 @@
 </head>
 <body>
 
-    <div id="start-prompt">CLICK TO START AR & AUDIO</div>
+    <div id="start-overlay">
+        <h2>3D RADIO AR</h2>
+        <p>Tap to initialize sensors & audio</p>
+    </div>
 
     <div id="radio-ui">
-        <div id="track-name">Loading...</div>
+        <div id="track-name" style="margin-bottom:10px; font-weight:bold;">---</div>
         <div class="controls">
             <button id="btn-play">PLAY</button>
             <button id="btn-pause">PAUSE</button>
@@ -93,32 +70,29 @@
         import { TransformControls } from 'three/addons/controls/TransformControls.js';
         import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 
-        // --- 1. Audio Setup ---
+        // --- Audio Logic ---
         const tracks = [
-            { src: 'cuphead-ost-die-house-music.mp3', name: 'Cuphead - Die House' },
-            { src: encodeURI('Quantum Mechanics.mp3'), name: 'Quantum Mechanics' }
+            { src: 'cuphead-ost-die-house-music.mp3', name: 'Cuphead: Die House' },
+            { src: 'Quantum Mechanics.mp3', name: 'Quantum Mechanics' }
         ];
-        let currentIdx = 0;
-        const audio = new Audio(tracks[currentIdx].src);
-        
-        const trackNameEl = document.getElementById('track-name');
-        trackNameEl.textContent = tracks[currentIdx].name;
+        let trackIdx = 0;
+        const audio = new Audio(tracks[trackIdx].src);
+        const trackDisplay = document.getElementById('track-name');
+        trackDisplay.textContent = tracks[trackIdx].name;
 
-        document.getElementById('btn-play').addEventListener('click', () => audio.play());
-        document.getElementById('btn-pause').addEventListener('click', () => audio.pause());
-        document.getElementById('btn-next').addEventListener('click', () => {
-            currentIdx = (currentIdx + 1) % tracks.length;
-            audio.src = tracks[currentIdx].src;
-            trackNameEl.textContent = tracks[currentIdx].name;
+        document.getElementById('btn-play').onclick = () => audio.play();
+        document.getElementById('btn-pause').onclick = () => audio.pause();
+        document.getElementById('btn-next').onclick = () => {
+            trackIdx = (trackIdx + 1) % tracks.length;
+            audio.src = tracks[trackIdx].src;
+            trackDisplay.textContent = tracks[trackIdx].name;
             audio.play();
-        });
+        };
 
-        // --- 2. Core Scene Setup ---
+        // --- Scene Setup ---
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        camera.position.z = 5;
-
-        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(window.devicePixelRatio);
         document.body.appendChild(renderer.domElement);
@@ -126,78 +100,83 @@
         const labelRenderer = new CSS2DRenderer();
         labelRenderer.setSize(window.innerWidth, window.innerHeight);
         labelRenderer.domElement.style.position = 'absolute';
-        labelRenderer.domElement.style.top = '0px';
+        labelRenderer.domElement.style.top = '0';
         labelRenderer.domElement.style.pointerEvents = 'none';
         document.body.appendChild(labelRenderer.domElement);
 
-        scene.add(new THREE.AmbientLight(0xffffff, 1));
-        const pointLight = new THREE.PointLight(0xffffff, 2);
-        pointLight.position.set(5, 5, 5);
-        scene.add(pointLight);
+        scene.add(new THREE.AmbientLight(0xffffff, 2));
+        const sun = new THREE.DirectionalLight(0xffffff, 2);
+        sun.position.set(5, 10, 7);
+        scene.add(sun);
 
-        // --- 3. Accelerometer (AR Feel) Logic ---
-        let targetRotation = new THREE.Euler(0, 0, 0);
-        const startBtn = document.getElementById('start-prompt');
+        // --- AR Camera Movement (Phone Moving Around Radio) ---
+        let lon = 0, lat = 0;
+        let phi = 0, theta = 0;
+        const distance = 5; // How far the "phone" is from the radio
 
-        function handleOrientation(event) {
-            // Beta (tilt front/back), Gamma (tilt left/right)
-            const x = THREE.MathUtils.degToRad(event.beta - 90); 
-            const y = THREE.MathUtils.degToRad(event.gamma);
-            targetRotation.set(x, y, 0);
+        function updateCamera() {
+            lat = Math.max(-85, Math.min(85, lat));
+            phi = THREE.MathUtils.degToRad(90 - lat);
+            theta = THREE.MathUtils.degToRad(lon);
+
+            camera.position.x = distance * Math.sin(phi) * Math.cos(theta);
+            camera.position.y = distance * Math.cos(phi);
+            camera.position.z = distance * Math.sin(phi) * Math.sin(theta);
+            camera.lookAt(0, 0, 0);
         }
 
-        startBtn.addEventListener('click', () => {
-            startBtn.style.display = 'none';
-            // Request permission for iOS 13+
-            if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-                DeviceOrientationEvent.requestPermission()
-                    .then(response => {
-                        if (response === 'granted') {
-                            window.addEventListener('deviceorientation', handleOrientation);
-                        }
-                    });
-            } else {
-                window.addEventListener('deviceorientation', handleOrientation);
-            }
-        });
+        // Sensor inputs
+        function onOrientation(e) {
+            // We use gamma for left/right orbit and beta for up/down orbit
+            lon = e.gamma * 2; 
+            lat = (e.beta - 90) * 2;
+        }
 
-        // --- 4. Load Model & Controls ---
+        // Permission & Overlay
+        document.getElementById('start-overlay').onclick = function() {
+            this.style.display = 'none';
+            if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                DeviceOrientationEvent.requestPermission().then(s => {
+                    if(s === 'granted') window.addEventListener('deviceorientation', onOrientation);
+                });
+            } else {
+                window.addEventListener('deviceorientation', onOrientation);
+            }
+        };
+
+        // --- Load Model & Interaction ---
         let radio;
-        const loader = new GLTFLoader();
+        const uiDiv = document.getElementById('radio-ui');
         const raycaster = new THREE.Raycaster();
         const mouse = new THREE.Vector2();
-        const uiDiv = document.getElementById('radio-ui');
+        let isMovingRadio = false;
 
-        loader.load('old_radio.glb', (gltf) => {
+        new GLTFLoader().load('old_radio.glb', (gltf) => {
             radio = gltf.scene;
             scene.add(radio);
 
-            // Attach Hover UI
-            const radioLabel = new CSS2DObject(uiDiv);
-            radioLabel.position.set(0, 1.5, 0);
-            radio.add(radioLabel);
+            const uiObj = new CSS2DObject(uiDiv);
+            uiObj.position.set(0, 1.2, 0);
+            radio.add(uiObj);
 
-            // Transform Controls (The 4 Arrows)
             const tControls = new TransformControls(camera, renderer.domElement);
             tControls.attach(radio);
             tControls.setMode('translate');
+            tControls.setSize(0.7); // Smaller arrows for mobile
             scene.add(tControls);
 
-            // Prevent AR camera movement while dragging the model
             tControls.addEventListener('dragging-changed', (e) => {
-                isDragging = e.value;
+                isMovingRadio = e.value;
             });
         });
 
-        // --- 5. Interaction & Animation ---
-        let isDragging = false;
-
+        // Hover detection
         window.addEventListener('mousemove', (e) => {
             mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
             mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
         });
-
-        // Touch support for mobile hover effect
+        
+        // Touch for hover on phone
         window.addEventListener('touchstart', (e) => {
             mouse.x = (e.touches[0].clientX / window.innerWidth) * 2 - 1;
             mouse.y = -(e.touches[0].clientY / window.innerHeight) * 2 + 1;
@@ -205,24 +184,17 @@
 
         function animate() {
             requestAnimationFrame(animate);
-
-            // Apply smooth AR camera tilt if not dragging
-            if (!isDragging) {
-                camera.rotation.x += (targetRotation.x - camera.rotation.x) * 0.05;
-                camera.rotation.y += (targetRotation.y - camera.rotation.y) * 0.05;
+            
+            // Only orbit if we aren't busy dragging the radio
+            if (!isMovingRadio) {
+                updateCamera();
             }
 
-            // Raycasting for hover UI
             if (radio) {
                 raycaster.setFromCamera(mouse, camera);
-                const intersects = raycaster.intersectObject(radio, true);
-                if (intersects.length > 0) {
-                    uiDiv.style.opacity = '1';
-                    uiDiv.style.pointerEvents = 'auto';
-                } else {
-                    uiDiv.style.opacity = '0';
-                    uiDiv.style.pointerEvents = 'none';
-                }
+                const hits = raycaster.intersectObject(radio, true);
+                uiDiv.style.opacity = hits.length > 0 ? '1' : '0';
+                uiDiv.style.pointerEvents = hits.length > 0 ? 'auto' : 'none';
             }
 
             renderer.render(scene, camera);
@@ -230,12 +202,12 @@
         }
         animate();
 
-        window.addEventListener('resize', () => {
+        window.onresize = () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
             labelRenderer.setSize(window.innerWidth, window.innerHeight);
-        });
+        };
     </script>
 </body>
 </html>
