@@ -3,35 +3,49 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Interactive 3D Radio</title>
+    <title>WebXR AR Radio</title>
     <style>
         body {
             margin: 0;
             overflow: hidden;
-            background-color: #1a1a1a;
+            background-color: #000;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
         
+        /* The DOM Overlay Container */
+        #overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none; /* Let taps pass through to AR */
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            align-items: center;
+            padding-bottom: 40px;
+        }
+
         /* The Audio Controls UI */
         #radio-ui {
-            background: rgba(20, 20, 20, 0.9);
+            background: rgba(20, 20, 20, 0.85);
+            backdrop-filter: blur(10px);
             color: #fff;
-            padding: 15px;
-            border-radius: 12px;
+            padding: 20px;
+            border-radius: 16px;
             text-align: center;
-            border: 1px solid #444;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-            
-            /* Hidden by default, revealed via JS */
-            opacity: 0;
-            pointer-events: none;
-            transition: opacity 0.3s ease;
-            width: 220px;
+            border: 1px solid #555;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            pointer-events: auto; /* Make buttons clickable */
+            display: none; /* Hidden until radio is placed */
+            width: 80%;
+            max-width: 300px;
         }
 
         #track-name {
-            font-size: 14px;
-            margin-bottom: 10px;
+            font-size: 16px;
+            margin-bottom: 15px;
             font-weight: bold;
             color: #4CAF50;
             white-space: nowrap;
@@ -43,15 +57,24 @@
             background: #333;
             color: white;
             border: none;
-            padding: 8px 12px;
-            margin: 0 4px;
-            border-radius: 6px;
+            padding: 12px 16px;
+            margin: 0 5px;
+            border-radius: 8px;
+            font-size: 16px;
             cursor: pointer;
-            transition: background 0.2s;
         }
 
-        .controls button:hover {
+        .controls button:active {
             background: #4CAF50;
+        }
+
+        #instructions {
+            background: rgba(0,0,0,0.6);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            margin-bottom: 20px;
+            pointer-events: auto;
         }
     </style>
 
@@ -66,21 +89,23 @@
 </head>
 <body>
 
-    <div id="radio-ui">
-        <div id="track-name">1. Die House (Cuphead OST)</div>
-        <div class="controls">
-            <button id="btn-play">▶ Play</button>
-            <button id="btn-pause">⏸ Pause</button>
-            <button id="btn-next">⏭ Next</button>
+    <div id="overlay">
+        <div id="instructions">Point at the floor and tap to place radio</div>
+        
+        <div id="radio-ui">
+            <div id="track-name">1. Die House (Cuphead OST)</div>
+            <div class="controls">
+                <button id="btn-play">▶</button>
+                <button id="btn-pause">⏸</button>
+                <button id="btn-next">⏭</button>
+            </div>
         </div>
     </div>
 
     <script type="module">
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-        import { TransformControls } from 'three/addons/controls/TransformControls.js';
-        import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+        import { ARButton } from 'three/addons/webxr/ARButton.js';
 
         // --- 1. Audio Setup ---
         const tracks = [
@@ -104,107 +129,119 @@
 
         // --- 2. Scene Setup ---
         const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
-        camera.position.set(0, 2, 5);
+        const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
 
-        // WebGL Renderer (For the 3D Model)
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setPixelRatio(window.devicePixelRatio);
         renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.xr.enabled = true; // Turn on WebXR
         document.body.appendChild(renderer.domElement);
 
-        // CSS2D Renderer (For the HTML Overlay)
-        const labelRenderer = new CSS2DRenderer();
-        labelRenderer.setSize(window.innerWidth, window.innerHeight);
-        labelRenderer.domElement.style.position = 'absolute';
-        labelRenderer.domElement.style.top = '0px';
-        labelRenderer.domElement.style.pointerEvents = 'none'; // Let clicks pass through to 3D scene initially
-        document.body.appendChild(labelRenderer.domElement);
+        // Add the AR Start Button to the page, requesting Hit Test and DOM Overlay features
+        document.body.appendChild(ARButton.createButton(renderer, {
+            requiredFeatures: ['hit-test', 'dom-overlay'],
+            domOverlay: { root: document.getElementById('overlay') }
+        }));
 
         // Lighting
-        const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
-        scene.add(ambientLight);
-        const dirLight = new THREE.DirectionalLight(0xffffff, 2);
-        dirLight.position.set(5, 5, 5);
-        scene.add(dirLight);
+        const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
+        light.position.set(0.5, 1, 0.25);
+        scene.add(light);
 
-        // General Camera Orbit Controls
-        const orbitControls = new OrbitControls(camera, renderer.domElement);
-        orbitControls.enableDamping = true;
-
-        // --- 3. Load Model & Add Controls ---
-        let radioMesh = null;
+        // --- 3. Load Model ---
+        let radioMesh;
         const loader = new GLTFLoader();
-        
         loader.load('old_radio.glb', (gltf) => {
             radioMesh = gltf.scene;
+            radioMesh.visible = false; // Hide until placed
+            
+            // Optional: Scale model down if it's too big for AR
+            // radioMesh.scale.set(0.2, 0.2, 0.2); 
+            
             scene.add(radioMesh);
-
-            // Add the UI element to float above the radio
-            const uiDiv = document.getElementById('radio-ui');
-            const uiObject = new CSS2DObject(uiDiv);
-            uiObject.position.set(0, 1.5, 0); // Adjust Y value to float above your specific model
-            radioMesh.add(uiObject);
-
-            // Setup Transform Controls (The 4-Arrow Gizmo)
-            // We attach it to the labelRenderer's DOM element so HTML clicks don't conflict
-            const transformControls = new TransformControls(camera, labelRenderer.domElement);
-            transformControls.attach(radioMesh);
-            transformControls.setMode('translate'); // Sets it to the arrow mode for moving
-            scene.add(transformControls);
-
-            // Disable OrbitControls while dragging the radio so the camera doesn't spin
-            transformControls.addEventListener('dragging-changed', (event) => {
-                orbitControls.enabled = !event.value;
-            });
         });
 
-        // --- 4. Hover Detection (Raycasting) ---
-        const raycaster = new THREE.Raycaster();
-        const mouse = new THREE.Vector2();
-        const uiDiv = document.getElementById('radio-ui');
-        let isHoveringUI = false;
+        // --- 4. AR Hit Testing (The Reticle) ---
+        // Creates a ring that shows where the model will be placed
+        const reticle = new THREE.Mesh(
+            new THREE.RingGeometry(0.15, 0.2, 32).rotateX(-Math.PI / 2),
+            new THREE.MeshBasicMaterial({ color: 0x00ff00 })
+        );
+        reticle.matrixAutoUpdate = false;
+        reticle.visible = false;
+        scene.add(reticle);
 
-        // Keep UI active if mouse is directly over the HTML panel
-        uiDiv.addEventListener('mouseenter', () => isHoveringUI = true);
-        uiDiv.addEventListener('mouseleave', () => isHoveringUI = false);
+        let hitTestSource = null;
+        let hitTestSourceRequested = false;
 
-        window.addEventListener('mousemove', (event) => {
-            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-        });
+        // Controller for tapping the screen
+        const controller = renderer.xr.getController(0);
+        controller.addEventListener('select', onSelect);
+        scene.add(controller);
+
+        function onSelect() {
+            if (reticle.visible && radioMesh && !radioMesh.visible) {
+                // Place the radio at the reticle's location
+                radioMesh.position.setFromMatrixPosition(reticle.matrix);
+                
+                // Make the radio face the user
+                const lookPos = new THREE.Vector3(camera.position.x, radioMesh.position.y, camera.position.z);
+                radioMesh.lookAt(lookPos);
+                
+                radioMesh.visible = true;
+                reticle.visible = false;
+
+                // Update UI
+                document.getElementById('instructions').style.display = 'none';
+                document.getElementById('radio-ui').style.display = 'block';
+            }
+        }
 
         // --- 5. Animation Loop ---
-        function animate() {
-            requestAnimationFrame(animate);
+        function animate(timestamp, frame) {
+            if (frame) {
+                const referenceSpace = renderer.xr.getReferenceSpace();
+                const session = renderer.xr.getSession();
 
-            orbitControls.update();
+                if (hitTestSourceRequested === false) {
+                    session.requestReferenceSpace('viewer').then((referenceSpace) => {
+                        session.requestHitTestSource({ space: referenceSpace }).then((source) => {
+                            hitTestSource = source;
+                        });
+                    });
+                    session.addEventListener('end', () => {
+                        hitTestSourceRequested = false;
+                        hitTestSource = null;
+                        document.getElementById('radio-ui').style.display = 'none';
+                        document.getElementById('instructions').style.display = 'block';
+                        if(radioMesh) radioMesh.visible = false;
+                    });
+                    hitTestSourceRequested = true;
+                }
 
-            // Check if mouse is hovering over the 3D radio
-            if (radioMesh) {
-                raycaster.setFromCamera(mouse, camera);
-                const intersects = raycaster.intersectObject(radioMesh, true);
-                
-                // Show UI if hovering over 3D model OR hovering over the UI itself
-                if (intersects.length > 0 || isHoveringUI) {
-                    uiDiv.style.opacity = '1';
-                    uiDiv.style.pointerEvents = 'auto'; // Make buttons clickable
-                } else {
-                    uiDiv.style.opacity = '0';
-                    uiDiv.style.pointerEvents = 'none'; // Pass clicks through to scene
+                if (hitTestSource) {
+                    const hitTestResults = frame.getHitTestResults(hitTestSource);
+
+                    // If the radio isn't placed yet, show the reticle on physical surfaces
+                    if (hitTestResults.length > 0 && radioMesh && !radioMesh.visible) {
+                        const hit = hitTestResults[0];
+                        reticle.visible = true;
+                        reticle.matrix.fromArray(hit.getPose(referenceSpace).transform.matrix);
+                    } else {
+                        reticle.visible = false;
+                    }
                 }
             }
 
             renderer.render(scene, camera);
-            labelRenderer.render(scene, camera);
         }
-        animate();
 
-        // Handle Window Resize
+        renderer.setAnimationLoop(animate);
+
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
-            labelRenderer.setSize(window.innerWidth, window.innerHeight);
         });
     </script>
 </body>
