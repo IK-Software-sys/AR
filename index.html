@@ -3,35 +3,25 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AR Radio - Real World Placement</title>
+    <title>AR Radio Debugger</title>
     <style>
-        body { margin: 0; overflow: hidden; font-family: sans-serif; }
+        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
+        #status-log { 
+            position: absolute; top: 10px; left: 10px; 
+            color: #0f0; background: rgba(0,0,0,0.8); 
+            padding: 10px; font-size: 12px; z-index: 999;
+            border-radius: 5px; pointer-events: none;
+        }
         #css-container { position: absolute; top: 0; pointer-events: none; }
-        
-        /* UI Styling */
         .model-ui-wrapper {
-            pointer-events: auto;
-            background: rgba(0, 0, 0, 0.8);
-            padding: 10px;
-            border-radius: 10px;
-            color: white;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            transform: translate(-50%, -50%);
+            pointer-events: auto; background: rgba(0,0,0,0.8);
+            padding: 15px; border-radius: 12px; color: white;
+            display: flex; flex-direction: column; gap: 10px;
         }
-        .controls button {
-            background: #444;
-            color: white;
-            border: none;
-            padding: 5px 10px;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-        .controls button.active { background: #4CAF50; }
     </style>
 </head>
 <body>
+    <div id="status-log">Initializing AR...</div>
     <div id="css-container"></div>
     <audio id="audio-player"></audio>
 
@@ -49,143 +39,109 @@
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         import { ARButton } from 'three/addons/webxr/ARButton.js';
         import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
-        import { TransformControls } from 'three/addons/controls/TransformControls.js';
 
-        let container, camera, scene, renderer, labelRenderer;
-        let controller, reticle, radioGroup;
-        let transformControl;
+        const log = document.getElementById('status-log');
+        let camera, scene, renderer, labelRenderer, reticle, radioGroup;
+        let hitTestSource = null;
+        let hitTestSourceRequested = false;
 
-        init();
-        animate();
+        // Check WebXR Support immediately
+        if ('xr' in navigator) {
+            navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
+                if (supported) {
+                    log.innerText = "AR Supported. Use button at bottom.";
+                    init();
+                } else {
+                    log.style.color = "red";
+                    log.innerText = "AR NOT SUPPORTED: Device/Browser mismatch.";
+                }
+            });
+        } else {
+            log.style.color = "red";
+            log.innerText = "AR NOT SUPPORTED: Use HTTPS and Chrome on Android.";
+        }
 
         function init() {
-            container = document.createElement('div');
-            document.body.appendChild(container);
-
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
 
-            // Lighting for "Real" look
-            const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
-            light.position.set(0.5, 1, 0.25);
-            scene.add(light);
-
-            // Renderer setup with XR enabled
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.xr.enabled = true;
-            container.appendChild(renderer.domElement);
+            document.body.appendChild(renderer.domElement);
 
-            // 2D UI Renderer
+            // Add the Button with specific AR features
+            const arButton = ARButton.createButton(renderer, { 
+                requiredFeatures: ['hit-test'],
+                optionalFeatures: ['dom-overlay'],
+                domOverlay: { root: document.body }
+            });
+            document.body.appendChild(arButton);
+
             labelRenderer = new CSS2DRenderer();
             labelRenderer.setSize(window.innerWidth, window.innerHeight);
-            labelRenderer.domElement.style.position = 'absolute';
-            labelRenderer.domElement.style.top = '0px';
             document.getElementById('css-container').appendChild(labelRenderer.domElement);
 
-            // Add the AR Button
-            document.body.appendChild(ARButton.createButton(renderer, { requiredFeatures: ['hit-test'] }));
+            // Lighting
+            scene.add(new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1));
 
-            radioGroup = new THREE.Group();
-            scene.add(radioGroup);
-
-            // Reticle (the square that shows where the radio will land)
+            // Placement Reticle
             reticle = new THREE.Mesh(
-                new THREE.RingGeometry(0.15, 0.2, 32).rotateX(-Math.PI / 2),
+                new THREE.RingGeometry(0.1, 0.11, 32).rotateX(-Math.PI / 2),
                 new THREE.MeshBasicMaterial()
             );
             reticle.matrixAutoUpdate = false;
             reticle.visible = false;
             scene.add(reticle);
 
-            // Controller for placing the object
-            controller = renderer.xr.getController(0);
-            controller.addEventListener('select', onSelect);
-            scene.add(controller);
+            radioGroup = new THREE.Group();
+            scene.add(radioGroup);
 
             // Load Model
-            const loader = new GLTFLoader();
-            loader.load('old_radio.glb', (gltf) => {
+            new GLTFLoader().load('old_radio.glb', (gltf) => {
                 radioGroup.add(gltf.scene);
-                radioGroup.visible = false; // Hide until user places it
-                createUI();
+                radioGroup.visible = false;
+                setupUI();
             });
 
-            // Transform Controls
-            transformControl = new TransformControls(camera, renderer.domElement);
-            scene.add(transformControl);
+            // Tap to place
+            const controller = renderer.xr.getController(0);
+            controller.addEventListener('select', () => {
+                if (reticle.visible) {
+                    radioGroup.visible = true;
+                    radioGroup.position.setFromMatrixPosition(reticle.matrix);
+                    log.innerText = "Object Placed.";
+                }
+            });
+            scene.add(controller);
 
-            window.addEventListener('resize', onWindowResize);
-        }
-
-        function createUI() {
-            const songs = [
-                { title: "Cuphead", src: "cuphead-ost-die-house-music.mp3" },
-                { title: "Quantum", src: "Quantum Mechanics.mp3" }
-            ];
-            let currentIdx = 0;
-            const audio = document.getElementById('audio-player');
-            audio.src = songs[currentIdx].src;
-
-            const div = document.createElement('div');
-            div.className = 'model-ui-wrapper';
-            div.innerHTML = `
-                <div id="song-name" style="font-size:12px">${songs[currentIdx].title}</div>
-                <div class="controls">
-                    <button id="play">▶</button>
-                    <button id="pause">⏸</button>
-                    <button id="next">⏭</button>
-                </div>
-                <div class="controls">
-                    <button id="m-move">Move</button>
-                    <button id="m-rot">Rot</button>
-                </div>
-            `;
-
-            const uiObj = new CSS2DObject(div);
-            uiObj.position.set(0, 0.5, 0); // Position UI above radio
-            radioGroup.add(uiObj);
-
-            // Logic for buttons
-            div.querySelector('#play').onclick = () => audio.play();
-            div.querySelector('#pause').onclick = () => audio.pause();
-            div.querySelector('#next').onclick = () => {
-                currentIdx = (currentIdx + 1) % songs.length;
-                audio.src = songs[currentIdx].src;
-                div.querySelector('#song-name').innerText = songs[currentIdx].title;
-                audio.play();
-            };
-            
-            div.querySelector('#m-move').onclick = () => transformControl.setMode('translate');
-            div.querySelector('#m-rot').onclick = () => transformControl.setMode('rotate');
-        }
-
-        function onSelect() {
-            if (reticle.visible) {
-                radioGroup.visible = true;
-                radioGroup.position.setFromMatrixPosition(reticle.matrix);
-                transformControl.attach(radioGroup);
-            }
-        }
-
-        function onWindowResize() {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            labelRenderer.setSize(window.innerWidth, window.innerHeight);
-        }
-
-        function animate() {
             renderer.setAnimationLoop(render);
         }
 
-        function render(timestamp, frame) {
+        function setupUI() {
+            const div = document.createElement('div');
+            div.className = 'model-ui-wrapper';
+            div.innerHTML = `<strong>RADIO CONTROLS</strong><br>
+                             <button onclick="document.getElementById('audio-player').play()">Play</button>`;
+            const ui = new CSS2DObject(div);
+            ui.position.set(0, 0.4, 0);
+            radioGroup.add(ui);
+        }
+
+        async function render(timestamp, frame) {
             if (frame) {
-                const referenceSpace = renderer.xr.getReferenceSpace();
                 const session = renderer.xr.getSession();
-                const hitTestSource = session.requestHitTestSource ? 
-                    await session.requestHitTestSource({ space: referenceSpace }) : null;
+                const referenceSpace = renderer.xr.getReferenceSpace();
+
+                if (hitTestSourceRequested === false) {
+                    session.requestReferenceSpace('viewer').then((viewerSpace) => {
+                        session.requestHitTestSource({ space: viewerSpace }).then((source) => {
+                            hitTestSource = source;
+                        });
+                    });
+                    hitTestSourceRequested = true;
+                }
 
                 if (hitTestSource) {
                     const hitTestResults = frame.getHitTestResults(hitTestSource);
@@ -198,7 +154,6 @@
                     }
                 }
             }
-
             renderer.render(scene, camera);
             labelRenderer.render(scene, camera);
         }
