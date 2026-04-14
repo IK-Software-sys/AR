@@ -3,54 +3,102 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Radio AR Hand Control</title>
+    <title>Quantum Radio AR</title>
     <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.4.0/model-viewer.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 
     <style>
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; color: #fff; font-family: sans-serif; overflow: hidden; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; color: #fff; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow: hidden; }
         model-viewer { width: 100%; height: 100%; }
+
+        /* Floating Interface */
+        #hand-ui {
+            position: absolute;
+            pointer-events: none;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            z-index: 1000;
+            transition: transform 0.1s ease-out;
+        }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            padding: 15px;
+            border-radius: 20px;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+        }
+
+        .track-info { font-size: 14px; font-weight: bold; margin-bottom: 8px; color: #e5b13a; }
         
-        .ui-panel { position: absolute; bottom: 40px; width: 100%; display: flex; flex-direction: column; align-items: center; gap: 15px; z-index: 100; pointer-events: none; }
-        .ar-btn { background: #e5b13a; color: #000; padding: 20px 40px; border-radius: 50px; font-weight: bold; border: none; font-size: 18px; pointer-events: auto; }
-        #status { font-family: monospace; font-size: 12px; background: rgba(0,0,0,0.8); padding: 8px; border-radius: 5px; }
-        
-        /* Hidden video for MediaPipe processing */
-        #input_video { display: none; position: absolute; }
-        #audio-indicator { position: absolute; top: 20px; right: 20px; background: rgba(0,255,0,0.3); padding: 10px; border-radius: 10px; display: none; }
+        .pinch-indicator {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #e5b13a;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 10px;
+            transition: all 0.2s;
+        }
+
+        .pinching { background: #e5b13a; transform: scale(0.8); color: #000; }
+
+        #status { 
+            position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+            background: rgba(0,0,0,0.6); padding: 5px 15px; border-radius: 20px; font-size: 12px;
+        }
+
+        #input_video { display: none; }
     </style>
 </head>
 <body>
 
     <video id="input_video"></video>
-    <div id="audio-indicator">🎵 Playing: Quantum Mechanics</div>
+    <div id="status">Point camera at hand to control</div>
+
+    <div id="hand-ui">
+        <div class="glass-card">
+            <div id="track-name" class="track-info">Quantum Mechanics</div>
+            <div style="font-size: 10px;">PINCH TO SWAP / PLAY</div>
+        </div>
+        <div id="cursor" class="pinch-indicator">AR</div>
+    </div>
 
     <model-viewer 
         id="ar-radio"
         src="old_radio.glb" 
-        ar 
-        ar-modes="webxr" 
+        ar ar-modes="webxr" 
         camera-controls 
-        interaction-prompt="none"
         shadow-intensity="1">
-
-        <div class="ui-panel">
-            <div id="status">Initializing Hand Tracking...</div>
-            <button slot="ar-button" class="ar-btn">OPEN AR CAMERA</button>
-        </div>
+        <button slot="ar-button" style="background: #e5b13a; border-radius: 10px; border: none; padding: 15px; position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);">
+            LAUNCH AR
+        </button>
     </model-viewer>
 
     <script>
         const viewer = document.querySelector('#ar-radio');
-        const status = document.querySelector('#status');
-        const audioIndicator = document.getElementById('audio-indicator');
-        
-        // Setup Audio
-        const radioMusic = new Audio('quantum-mechanics.mp3');
+        const handUI = document.getElementById('hand-ui');
+        const trackText = document.getElementById('track-name');
+        const cursor = document.getElementById('cursor');
+
+        // Audio Playlist
+        const playlist = [
+            { name: "Quantum Mechanics", file: "quantum-mechanics.mp3" },
+            { name: "Die House (Cuphead)", file: "cuphead-ost-die-house-music.mp3" }
+        ];
+        let currentTrackIdx = 0;
+        let audio = new Audio(playlist[currentTrackIdx].file);
         let isPinching = false;
 
-        // Initialize MediaPipe Hands
+        // Hand Tracking Logic
         const hands = new Hands({
             locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
         });
@@ -58,78 +106,69 @@
         hands.setOptions({
             maxNumHands: 1,
             modelComplexity: 1,
-            minDetectionConfidence: 0.5,
-            minTrackingConfidence: 0.5
+            minDetectionConfidence: 0.7,
+            minTrackingConfidence: 0.7
         });
 
-        hands.onResults(onResults);
-
-        // Helper to calculate distance for pinch
-        function getDistance(p1, p2) {
-            return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
-        }
-
-        function onResults(results) {
+        hands.onResults((results) => {
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                handUI.style.display = 'flex';
                 const landmarks = results.multiHandLandmarks[0];
                 
-                // 1. ROTATION LOGIC (Mapping Hand X to Model Rotation)
-                const handX = landmarks[9].x; // Middle finger knuckle
-                const rotationDeg = (handX - 0.5) * 180; 
-                viewer.cameraOrbit = `${rotationDeg}deg 75deg auto`;
-
-                // 2. PINCH LOGIC (Thumb tip [4] and Index tip [8])
-                const thumbTip = landmarks[4];
+                // Position UI near the Index Finger Tip
                 const indexTip = landmarks[8];
-                const pinchDist = getDistance(thumbTip, indexTip);
+                const x = indexTip.x * window.innerWidth;
+                const y = indexTip.y * window.innerHeight;
+                handUI.style.transform = `translate(${x}px, ${y}px)`;
 
-                if (pinchDist < 0.05) { // Threshold for a "click"
+                // Rotation Logic (mapped to hand position)
+                const rot = (landmarks[9].x - 0.5) * 180;
+                viewer.cameraOrbit = `${rot}deg 75deg auto`;
+
+                // Pinch Logic (Thumb [4] to Index [8])
+                const thumbTip = landmarks[4];
+                const dist = Math.hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y);
+
+                if (dist < 0.04) {
                     if (!isPinching) {
-                        toggleAudio();
-                        isPinching = true; 
+                        isPinching = true;
+                        cursor.classList.add('pinching');
+                        handlePinchAction();
                     }
                 } else {
                     isPinching = false;
+                    cursor.classList.remove('pinching');
                 }
-
-                status.innerText = "Hand Detected: Controlling Radio";
             } else {
-                status.innerText = "Hand not visible";
+                handUI.style.display = 'none';
+            }
+        });
+
+        function handlePinchAction() {
+            // Toggle logic: If paused, play. If playing, switch track.
+            if (audio.paused) {
+                audio.play().catch(e => console.log("Unlock audio via screen tap first"));
+            } else {
+                audio.pause();
+                currentTrackIdx = (currentTrackIdx + 1) % playlist.length;
+                audio = new Audio(playlist[currentTrackIdx].file);
+                trackText.innerText = playlist[currentTrackIdx].name;
+                audio.play();
             }
         }
 
-        function toggleAudio() {
-            if (radioMusic.paused) {
-                radioMusic.play();
-                audioIndicator.style.display = "block";
-            } else {
-                radioMusic.pause();
-                audioIndicator.style.display = "none";
-            }
-        }
-
-        // Setup Camera for MediaPipe
+        // Camera Start
         const videoElement = document.getElementById('input_video');
         const camera = new Camera(videoElement, {
-            onFrame: async () => {
-                await hands.send({image: videoElement});
-            },
-            width: 640,
-            height: 480,
-            facingMode: "environment" // Use back camera
+            onFrame: async () => { await hands.send({image: videoElement}); },
+            width: 1280, height: 720, facingMode: "environment"
         });
         camera.start();
 
-        // Original Scaling Logic
-        setInterval(() => {
-            if (viewer.arTracking === 'tracking') {
-                const orbit = viewer.getCameraOrbit();
-                const dist = orbit.radius; 
-                let dynamicScale = dist * 0.8; 
-                dynamicScale = Math.min(Math.max(dynamicScale, 0.4), 3.5);
-                viewer.scale = `${dynamicScale} ${dynamicScale} ${dynamicScale}`;
-            }
-        }, 100);
+        // One-time click to enable audio (Browser Security Requirement)
+        document.body.addEventListener('click', () => {
+            console.log("Audio Context Unlocked");
+        }, { once: true });
     </script>
 </body>
 </html>
