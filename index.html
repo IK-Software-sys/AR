@@ -3,46 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vintage AR Radio</title>
+    <title>Spatial AR Radio</title>
     <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.4.0/model-viewer.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 
     <style>
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; color: #fff; font-family: 'Courier New', Courier, monospace; overflow: hidden; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; color: #fff; font-family: 'Courier New', monospace; overflow: hidden; }
         
-        /* Simple Top Window Player */
         #static-player {
-            position: absolute;
-            top: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 90%;
-            max-width: 400px;
-            background: rgba(40, 30, 20, 0.9);
-            border: 2px solid #e5b13a;
-            border-radius: 8px;
-            padding: 15px;
-            z-index: 2000;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+            width: 90%; max-width: 400px; background: rgba(30, 20, 10, 0.95);
+            border: 2px solid #e5b13a; border-radius: 4px; padding: 15px;
+            z-index: 2000; display: flex; justify-content: space-between; align-items: center;
         }
 
-        .info-box { flex-grow: 1; }
-        #track-display { font-size: 14px; color: #e5b13a; font-weight: bold; margin-bottom: 4px; }
-        .fx-tag { font-size: 10px; color: #888; text-transform: uppercase; }
-
-        .btn-group { display: flex; gap: 10px; }
-        .radio-btn { 
-            background: #e5b13a; border: none; padding: 8px 15px; 
-            border-radius: 4px; cursor: pointer; font-weight: bold; font-family: inherit;
-        }
+        #track-display { font-size: 13px; color: #e5b13a; font-weight: bold; }
+        .radio-btn { background: #e5b13a; border: none; padding: 10px 15px; border-radius: 2px; cursor: pointer; font-weight: bold; font-family: inherit; }
         
         model-viewer { width: 100%; height: 100%; }
         #input_video { display: none; }
-        #ar-launch { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 2001; }
     </style>
 </head>
 <body>
@@ -51,8 +31,8 @@
 
     <div id="static-player">
         <div class="info-box">
-            <div id="track-display">Cuphead - Die House</div>
-            <div class="fx-tag">Vintage Filter: ON</div>
+            <div id="track-display">TRACK: Die House</div>
+            <div style="font-size: 9px; color: #888;">SPATIAL AUDIO ACTIVE</div>
         </div>
         <div class="btn-group">
             <button class="radio-btn" onclick="togglePlay()" id="playBtn">PLAY</button>
@@ -60,15 +40,13 @@
         </div>
     </div>
 
-    <button id="ar-launch" class="radio-btn" onclick="document.querySelector('#ar-radio').activateAR()">OPEN AR CAMERA</button>
-
     <model-viewer 
         id="ar-radio"
         src="old_radio.glb" 
         ar ar-modes="webxr" 
         camera-controls
-        interaction-prompt="none"
-        shadow-intensity="1">
+        interaction-prompt="none">
+        <button slot="ar-button" class="radio-btn" style="position:absolute; bottom:20px; left:50%; transform:translateX(-50%);">START AR</button>
     </model-viewer>
 
     <script>
@@ -76,96 +54,99 @@
         const trackDisplay = document.getElementById('track-display');
         const playBtn = document.getElementById('playBtn');
 
-        // --- AUDIO ENGINE WITH OLD RADIO EFFECT ---
+        // --- SPATIAL AUDIO ENGINE ---
         const AudioContext = window.AudioContext || window.webkitAudioContext;
-        let audioCtx;
-        let source;
-        let biquadFilter;
+        let audioCtx, source, biquadFilter, panner, gainNode;
         
         const playlist = [
             { name: "Die House (Cuphead)", file: "cuphead-ost-die-house-music.mp3" },
-            { name: "Quantum Mechanics", file: "quantum-mechanics.mp3" }
+            { name: "Can You Hear The Music", file: "Can You Hear The Music.mp3" }
         ];
         let trackIdx = 0;
         let audio = new Audio(playlist[trackIdx].file);
-        audio.crossOrigin = "anonymous";
+        audio.loop = true;
 
-        function initAudioFX() {
+        function initAudio() {
             if (!audioCtx) {
                 audioCtx = new AudioContext();
                 source = audioCtx.createMediaElementSource(audio);
                 
-                // Bandpass Filter (Cuts highs and lows for that "thin" radio sound)
+                // 1. Vintage Filter (Bandpass)
                 biquadFilter = audioCtx.createBiquadFilter();
                 biquadFilter.type = "bandpass";
-                biquadFilter.frequency.value = 1500; // Focus on mid-range
-                biquadFilter.Q.value = 1.0;
+                biquadFilter.frequency.value = 1600;
 
-                // Simple Distortion (Gain) for slight crackle
-                const dist = audioCtx.createGain();
-                dist.gain.value = 1.2;
+                // 2. Spatial Panner (Directional Audio)
+                panner = audioCtx.createPanner();
+                panner.panningModel = 'HRTF';
+                panner.distanceModel = 'inverse';
+                panner.refDistance = 1;
+                panner.maxDistance = 10000;
+                panner.rolloffFactor = 1;
+                
+                // 3. Gain Node for volume control
+                gainNode = audioCtx.createGain();
 
                 source.connect(biquadFilter);
-                biquadFilter.connect(dist);
-                dist.connect(audioCtx.destination);
+                biquadFilter.connect(panner);
+                panner.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
             }
         }
 
         function togglePlay() {
-            initAudioFX();
+            initAudio();
             if (audioCtx.state === 'suspended') audioCtx.resume();
-            
-            if (audio.paused) {
-                audio.play();
-                playBtn.innerText = "PAUSE";
-            } else {
-                audio.pause();
-                playBtn.innerText = "PLAY";
-            }
+            if (audio.paused) { audio.play(); playBtn.innerText = "PAUSE"; } 
+            else { audio.pause(); playBtn.innerText = "PLAY"; }
         }
 
         function nextTrack() {
             audio.pause();
             trackIdx = (trackIdx + 1) % playlist.length;
-            
-            // Re-assign audio source
             audio.src = playlist[trackIdx].file;
-            trackDisplay.innerText = playlist[trackIdx].name;
-            
+            trackDisplay.innerText = "TRACK: " + playlist[trackIdx].name;
             audio.play();
             playBtn.innerText = "PAUSE";
         }
 
-        // --- HAND TRACKING & MOTION ---
+        // --- HAND TRACKING & ROTATION LOGIC ---
         const hands = new Hands({
             locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
         });
 
-        hands.setOptions({
-            maxNumHands: 1,
-            modelComplexity: 1,
-            minDetectionConfidence: 0.5,
-            minTrackingConfidence: 0.5
-        });
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
 
         hands.onResults((results) => {
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                const landmarks = results.multiHandLandmarks[0];
-                const palm = landmarks[9];
+                const palm = results.multiHandLandmarks[0][9];
 
-                // 1. Horizontal Rotation (X movement)
-                const rotateY = (palm.x - 0.5) * 180;
+                // Rotate model based on Hand X
+                const deg = (palm.x - 0.5) * 180;
+                const tilt = (palm.y - 0.5) * 60 + 75;
+                viewer.cameraOrbit = `${deg}deg ${tilt}deg auto`;
 
-                // 2. Vertical Tilt (Y movement)
-                const tiltX = (palm.y - 0.5) * 60 + 75; 
+                // MOVE Model Vertical
+                const vPos = (0.5 - palm.y) * 150;
+                viewer.style.transform = `translateY(${vPos}px)`;
 
-                // Apply to camera
-                viewer.cameraOrbit = `${rotateY}deg ${tiltX}deg auto`;
+                // SPATIAL AUDIO LOGIC
+                if (panner) {
+                    // We map the rotation degree to a Z-position
+                    // If deg is near 0, the radio is facing you. 
+                    // If deg is near 90 or -90, it's side-on (quieter).
+                    const rad = deg * (Math.PI / 180);
+                    const zPos = Math.cos(rad); // 1 when facing front, 0 when side, -1 when back
+                    const xPos = Math.sin(rad);
 
-                // 3. Physical Vertical Position (Up/Down)
-                // Maps hand height to a CSS transform for "Actual AR" feel
-                const verticalTranslation = (0.5 - palm.y) * 150; 
-                viewer.style.transform = `translateY(${verticalTranslation}px)`;
+                    // Update the audio "listener" orientation
+                    // This makes the sound muffled when the "back" of the radio faces the camera
+                    panner.setPosition(xPos, 0, zPos);
+                    
+                    // Extra realism: Drop gain when facing away
+                    const volumeFactor = Math.max(0.3, (zPos + 1) / 2); 
+                    gainNode.gain.setTargetAtTime(volumeFactor, audioCtx.currentTime, 0.1);
+                }
             }
         });
 
