@@ -3,173 +3,140 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AR Multi-Model Radio</title>
+  <title>Android AR Studio</title>
   
   <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.4.0/model-viewer.min.js"></script>
   
   <style>
-    :root {
-      --gold: #e5b13a;
-      --glass: rgba(25, 25, 25, 0.85);
-    }
+    :root { --gold: #e5b13a; --glass: rgba(20, 20, 20, 0.9); }
+    body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #111; font-family: sans-serif; overflow: hidden; color: white; }
+    
+    model-viewer { width: 100%; height: 100%; background-color: #111; }
 
-    body, html {
-      margin: 0; padding: 0; width: 100%; height: 100%;
-      background-color: #1a1a1a; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      overflow: hidden; color: white;
+    /* Model Switcher at Top */
+    .top-bar {
+      position: absolute; top: 20px; width: 100%; display: flex; 
+      justify-content: center; gap: 8px; z-index: 100;
     }
-
-    model-viewer {
-      width: 100%; height: 100%;
-      --poster-color: transparent;
-    }
-
-    /* --- UI TOP: Model Switcher --- */
-    .model-header {
-      position: absolute; top: 20px; left: 0; width: 100%;
-      display: flex; flex-direction: column; align-items: center; z-index: 10;
-    }
-
-    .selector-pills {
-      display: flex; gap: 10px; background: var(--glass);
-      padding: 8px; border-radius: 30px; border: 1px solid #444;
-    }
-
     .pill {
-      padding: 6px 15px; border-radius: 20px; cursor: pointer;
-      font-size: 13px; transition: 0.3s; border: none; background: none; color: #aaa;
+      background: #333; color: white; border: 1px solid #555;
+      padding: 8px 15px; border-radius: 20px; font-size: 12px;
+    }
+    .pill.active { background: var(--gold); color: black; border-color: var(--gold); font-weight: bold; }
+
+    /* Bottom Control Area */
+    .controls {
+      position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+      width: 90%; max-width: 400px; display: flex; flex-direction: column; gap: 12px; z-index: 100;
     }
 
-    .pill.active { background: var(--gold); color: black; font-weight: bold; }
-
-    /* --- UI BOTTOM: Music Player & AR Button --- */
-    .bottom-controls {
-      position: absolute; bottom: 30px; left: 50%;
-      transform: translateX(-50%); width: 90%; max-width: 400px;
-      display: flex; flex-direction: column; gap: 15px; z-index: 10;
+    .music-box {
+      background: var(--glass); padding: 15px; border-radius: 15px;
+      text-align: center; border: 1px solid #333;
     }
 
-    .music-card {
-      background: var(--glass); backdrop-filter: blur(10px);
-      padding: 15px; border-radius: 20px; border: 1px solid #333;
-      text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-    }
-
-    .track-name { font-size: 16px; margin-bottom: 10px; font-weight: 500; }
-
-    .btn-group { display: flex; justify-content: center; gap: 10px; }
-
-    button.ctrl-btn {
-      background: #333; color: white; border: none; padding: 10px 20px;
-      border-radius: 12px; font-weight: bold; cursor: pointer; flex: 1;
-    }
-
-    button#play-pause-btn { background: var(--gold); color: black; }
-
-    /* The Main AR Launch Button */
-    .ar-launch-btn {
-      background: white; color: black; border: none; padding: 15px;
+    .ar-btn {
+      background: #fff; color: #000; border: none; padding: 18px;
       border-radius: 50px; font-weight: bold; font-size: 16px;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.4); cursor: pointer;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+
+    /* Debugger text so you can see what's wrong on your phone screen */
+    #status-log {
+      position: absolute; bottom: 5px; width: 100%; text-align: center;
+      font-size: 10px; color: #777; pointer-events: none;
     }
   </style>
 </head>
 <body>
 
   <model-viewer 
-    id="main-viewer"
+    id="viewer"
     src="old_radio.glb" 
-    ar ar-modes="webxr scene-viewer quick-look" 
+    ar 
+    ar-modes="webxr scene-viewer" 
     camera-controls 
-    ar-placement="floor" 
-    shadow-intensity="1"
-    exposure="1">
-    
-    <div class="model-header">
-      <div class="selector-pills" id="model-selector">
-        </div>
-    </div>
+    ar-placement="floor"
+    shadow-intensity="1">
 
-    <div class="bottom-controls">
-      
-      <div class="music-card">
-        <div class="track-name" id="display-track">Die House</div>
-        <div class="btn-group">
-          <button class="ctrl-btn" id="play-pause-btn">Play</button>
-          <button class="ctrl-btn" id="next-btn">Next Track</button>
+    <div class="top-bar" id="model-list"></div>
+
+    <div class="controls">
+      <div class="music-box">
+        <div id="song-name" style="margin-bottom:10px; font-weight:bold;">Die House</div>
+        <div style="display:flex; gap:10px;">
+          <button id="play-pause" style="flex:1; padding:10px; border-radius:8px; border:none; background:var(--gold);">Play</button>
+          <button id="next-song" style="flex:1; padding:10px; border-radius:8px; border:none; background:#444; color:white;">Next</button>
         </div>
       </div>
 
-      <button slot="ar-button" class="ar-launch-btn">
-        ✨ Place Object in My Room
+      <button slot="ar-button" class="ar-btn">
+        🚀 ENTER AR MODE
       </button>
     </div>
 
+    <div id="status-log">Status: Ready</div>
   </model-viewer>
 
-  <audio id="audio-player" src="cuphead-ost-die-house-music.mp3"></audio>
+  <audio id="player" src="cuphead-ost-die-house-music.mp3"></audio>
 
   <script>
-    // 1. EASILY ADD MORE MODELS HERE
+    const viewer = document.getElementById('viewer');
+    const audio = document.getElementById('player');
+    const status = document.getElementById('status-log');
+
+    // 1. ADD NEW MODELS HERE
     const models = [
-      { name: "Old Radio", file: "old_radio.glb" },
-      { name: "TV Set", file: "retro_tv.glb" }, // Example: Add more here
-      { name: "Speaker", file: "speaker.glb" }
+      { name: "Vintage Radio", file: "old_radio.glb" },
+      { name: "Add Model 2", file: "model2.glb" }
     ];
 
-    // 2. EASILY ADD MORE SONGS HERE
-    const playlist = [
+    // 2. ADD NEW SONGS HERE
+    const songs = [
       { name: "Die House", file: "cuphead-ost-die-house-music.mp3" },
       { name: "Quantum Mechanics", file: "quantum-mechanics.mp3" }
     ];
 
-    const viewer = document.getElementById('main-viewer');
-    const audio = document.getElementById('audio-player');
-    const playBtn = document.getElementById('play-pause-btn');
-    const nextBtn = document.getElementById('next-btn');
-    const trackDisplay = document.getElementById('display-track');
-    const selector = document.getElementById('model-selector');
-
-    let currentTrackIdx = 0;
-
-    // --- Model Switching Logic ---
-    models.forEach((model, index) => {
-      const btn = document.createElement('button');
-      btn.className = `pill ${index === 0 ? 'active' : ''}`;
-      btn.innerText = model.name;
+    // Build Model Switcher
+    const bar = document.getElementById('model-list');
+    models.forEach((m, i) => {
+      const btn = document.createElement('div');
+      btn.className = `pill ${i===0?'active':''}`;
+      btn.innerText = m.name;
       btn.onclick = () => {
-        // Update 3D Model
-        viewer.src = model.file;
-        // Update UI
+        viewer.src = m.file;
         document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
         btn.classList.add('active');
+        status.innerText = "Loaded: " + m.name;
       };
-      selector.appendChild(btn);
+      bar.appendChild(btn);
     });
 
-    // --- Music Logic ---
-    function togglePlay() {
-      if (audio.paused) {
-        audio.play();
-        playBtn.innerText = "Pause";
-      } else {
-        audio.pause();
-        playBtn.innerText = "Play";
-      }
-    }
+    // Music Logic
+    let currentSong = 0;
+    document.getElementById('play-pause').onclick = () => {
+      if(audio.paused) { audio.play(); document.getElementById('play-pause').innerText = "Pause"; }
+      else { audio.pause(); document.getElementById('play-pause').innerText = "Play"; }
+    };
 
-    function nextTrack() {
-      currentTrackIdx = (currentTrackIdx + 1) % playlist.length;
-      audio.src = playlist[currentTrackIdx].file;
-      trackDisplay.innerText = playlist[currentTrackIdx].name;
+    document.getElementById('next-song').onclick = () => {
+      currentSong = (currentSong + 1) % songs.length;
+      audio.src = songs[currentSong].file;
+      document.getElementById('song-name').innerText = songs[currentSong].name;
       audio.play();
-      playBtn.innerText = "Pause";
-    }
+      document.getElementById('play-pause').innerText = "Pause";
+    };
 
-    playBtn.addEventListener('click', togglePlay);
-    nextBtn.addEventListener('click', nextTrack);
-    audio.addEventListener('ended', nextTrack); // Auto-play next song
+    // --- ANDROID DEBUGGING ---
+    viewer.addEventListener('ar-status', (e) => {
+      status.innerText = "AR Status: " + e.detail.status;
+      if(e.detail.status === 'failed') {
+        alert("AR launch failed. Ensure you are using HTTPS and Chrome on Android.");
+      }
+    });
 
+    viewer.addEventListener('load', () => { status.innerText = "Model Loaded Successfully"; });
+    viewer.addEventListener('error', (e) => { status.innerText = "Error: " + e.detail.type; });
   </script>
 </body>
 </html>
