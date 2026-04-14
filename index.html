@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>AR Radio - Hand Tracked</title>
+  <title>Back Camera AR Radio</title>
   <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
@@ -10,15 +10,14 @@
   <style>
     body { margin: 0; overflow: hidden; background-color: black; }
     #video-input { display: none; }
-    /* The canvas where the hand skeleton is drawn */
     #hand-canvas {
       position: absolute;
       top: 0; left: 0;
       width: 100vw; height: 100vh;
       object-fit: cover;
-      z-index: -1; /* Sits behind the 3D scene */
+      z-index: -1;
+      transform: scaleX(-1); /* Flip if using front, REMOVE if using back camera */
     }
-    /* The actual camera feed background */
     #camera-feed {
       position: absolute;
       top: 0; left: 0;
@@ -34,43 +33,33 @@
   <canvas id="hand-canvas"></canvas>
   <video id="camera-feed" autoplay playsinline></video>
 
-  <a-scene embedded vr-mode-ui="enabled: false" renderer="alpha: true; antialias: true;">
+  <a-scene embedded vr-mode-ui="enabled: false" renderer="alpha: true; antialias: true; colorManagement: true;">
+    
     <a-assets>
       <a-asset-item id="radio-model" src="old_radio.glb"></a-asset-item>
-      <img id="move-icon" src="https://cdn-icons-png.flaticon.com/512/802/802244.png">
     </a-assets>
 
+    <a-entity light="type: ambient; intensity: 0.8"></a-entity>
+    <a-entity light="type: directional; intensity: 0.6" position="1 3 1"></a-entity>
+
     <a-camera position="0 1.6 0" look-controls="enabled: false">
-        <a-cursor id="cursor" color="red" fuse="true" fuse-timeout="500"></a-cursor>
+        <a-cursor color="yellow"></a-cursor>
     </a-camera>
 
-    <a-entity id="radio-group" position="0 1.2 -2">
+    <a-entity id="radio-group" position="0 1.2 -1.5">
+      <a-entity gltf-model="#radio-model" scale="0.5 0.5 0.5"></a-entity>
       
-      <a-entity gltf-model="#radio-model" scale="1 1 1"></a-entity>
-      
-      <a-image src="#move-icon" position="0.6 0 0" scale="0.3 0.3 0.3"></a-image>
-
-      <a-entity id="audio-panel" position="0 0.8 0">
-          <a-plane id="btn1" color="#222" width="0.5" height="0.2" position="-0.3 0 0" 
-                   text="value: Song 1; align: center"
-                   class="clickable"
-                   onmouseenter="playSong('song1')"></a-plane>
-
-          <a-plane id="btn2" color="#222" width="0.5" height="0.2" position="0.3 0 0" 
-                   text="value: Song 2; align: center"
-                   class="clickable"
-                   onmouseenter="playSong('song2')"></a-plane>
-
-          <a-plane id="btn-stop" color="#900" width="0.4" height="0.2" position="0 -0.25 0" 
-                   text="value: Pause; align: center"
-                   class="clickable"
-                   onmouseenter="pauseAudio()"></a-plane>
+      <a-entity position="0 0.6 0">
+          <a-plane class="clickable" width="0.4" height="0.15" color="#333" position="-0.25 0 0" 
+                   text="value: Song 1; align: center" onmouseenter="playSong('song1')"></a-plane>
+          <a-plane class="clickable" width="0.4" height="0.15" color="#333" position="0.25 0 0" 
+                   text="value: Song 2; align: center" onmouseenter="playSong('song2')"></a-plane>
       </a-entity>
     </a-entity>
   </a-scene>
 
-  <audio id="audio-song1" src="song1.wav"></audio>
-  <audio id="audio-song2" src="song2.mp3"></audio>
+  <audio id="audio-song1" src="825653__1love__1love_synth_unkown-undercurrents-[AudioTrimmer.com].wav"></audio>
+  <audio id="audio-song2" src="Quantum Mechanics.mp3"></audio>
 
   <script>
     const audio1 = document.getElementById('audio-song1');
@@ -81,43 +70,44 @@
     const cameraBg = document.getElementById('camera-feed');
     const radioGroup = document.getElementById('radio-group');
 
-    // Sync Background Feed
-    navigator.mediaDevices.getUserMedia({video: true}).then(stream => {
+    // SETUP BACK CAMERA
+    navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" } 
+    }).then(stream => {
         videoElement.srcObject = stream;
         cameraBg.srcObject = stream;
         videoElement.play();
-    });
+    }).catch(err => alert("Camera error: " + err));
 
     function playSong(id) {
-        pauseAudio();
+        audio1.pause(); audio2.pause();
         if(id === 'song1') audio1.play();
         if(id === 'song2') audio2.play();
     }
-    function pauseAudio() {
-        audio1.pause(); audio2.pause();
-    }
 
     const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-    hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
+    hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
 
     hands.onResults((results) => {
-      // Clear and draw the skeleton
       canvasCtx.save();
       canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-      if (results.multiHandLandmarks) {
+      
+      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
         for (const landmarks of results.multiHandLandmarks) {
-          drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 5});
-          drawLandmarks(canvasCtx, landmarks, {color: '#FF0000', lineWidth: 2});
+          // Draw Skeleton
+          drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 3});
+          drawLandmarks(canvasCtx, landmarks, {color: '#FF0000', radius: 2});
 
-          // Handle Pinch Logic
+          // Move radio on Pinch
           const index = landmarks[8];
           const thumb = landmarks[4];
           const dist = Math.hypot(index.x - thumb.x, index.y - thumb.y);
 
           if (dist < 0.05) {
-             const mX = (1 - index.x) * 4 - 2;
-             const mY = (1 - index.y) * 4;
-             radioGroup.setAttribute('position', `${mX} ${mY} -2`);
+             // Coordinate mapping for back camera (no flip needed)
+             const mX = (index.x * 4) - 2; 
+             const mY = (1 - index.y) * 3;
+             radioGroup.setAttribute('position', `${mX} ${mY} -1.5`);
           }
         }
       }
