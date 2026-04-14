@@ -3,191 +3,31 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AR Radio - High Stability Mode</title>
+    <title>3D Radio Interface</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #000; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-        #instructions {
-            position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
-            background: rgba(0,0,0,0.8); color: white; padding: 12px 20px;
-            border-radius: 20px; font-size: 14px; z-index: 10;
-            text-align: center; border: 1px solid #4CAF50; pointer-events: none;
-        }
-        #css-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
-        
-        .radio-ui {
-            pointer-events: auto; background: rgba(20,20,20,0.9);
-            border: 1px solid #4CAF50; border-radius: 12px; padding: 15px;
-            color: white; width: 200px; box-shadow: 0 0 20px rgba(0,0,0,0.5);
-        }
-        .radio-ui button {
-            width: 100%; padding: 10px; margin-top: 8px;
-            background: #333; color: white; border: 1px solid #555;
-            border-radius: 5px; cursor: pointer;
-        }
-        .radio-ui button:active { background: #4CAF50; }
+        body { display: flex; flex-direction: column; align-items: center; }
+        .controls { margin: 20px; }
+        .button { margin: 5px; padding: 10px; background-color: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        .button:hover { background-color: #0056b3; }
     </style>
 </head>
 <body>
-    <div id="instructions">Point camera at floor and move slowly</div>
-    <div id="css-container"></div>
-    <audio id="audio-player"></audio>
-
-    <script type="importmap">
-        {
-            "imports": {
-                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
-            }
-        }
-    </script>
-
-    <script type="module">
-        import * as THREE from 'three';
-        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-        import { ARButton } from 'three/addons/webxr/ARButton.js';
-        import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
-
-        let camera, scene, renderer, labelRenderer;
-        let reticle, radioGroup, hitTestSource = null;
-        let hitTestSourceRequested = false;
-
-        const songs = [
-            { title: "Die House", src: "cuphead-ost-die-house-music.mp3" },
-            { title: "Quantum", src: "Quantum Mechanics.mp3" }
-        ];
-        let songIndex = 0;
-
-        init();
-
-        async function init() {
-            scene = new THREE.Scene();
-            camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
-
-            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-            renderer.setPixelRatio(window.devicePixelRatio);
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.xr.enabled = true;
-            document.body.appendChild(renderer.domElement);
-
-            labelRenderer = new CSS2DRenderer();
-            labelRenderer.setSize(window.innerWidth, window.innerHeight);
-            document.getElementById('css-container').appendChild(labelRenderer.domElement);
-
-            // Lighting
-            scene.add(new THREE.HemisphereLight(0xffffff, 0xbbbbff, 2));
-
-            // AR Button with DOM Overlay (allows HTML UI to stay visible in AR)
-            const btn = ARButton.createButton(renderer, { 
-                requiredFeatures: ['hit-test'],
-                optionalFeatures: ['dom-overlay'],
-                domOverlay: { root: document.body }
-            });
-            document.body.appendChild(btn);
-
-            // Reticle
-            reticle = new THREE.Mesh(
-                new THREE.RingGeometry(0.1, 0.12, 32).rotateX(-Math.PI / 2),
-                new THREE.MeshBasicMaterial({ color: 0x4CAF50 })
-            );
-            reticle.matrixAutoUpdate = false;
-            reticle.visible = false;
-            scene.add(reticle);
-
-            // Radio Group
-            radioGroup = new THREE.Group();
-            scene.add(radioGroup);
-
-            // Load Radio
-            const loader = new GLTFLoader();
-            loader.load('old_radio.glb', (gltf) => {
-                radioGroup.add(gltf.scene);
-                radioGroup.visible = false;
-                createRadioUI();
-            });
-
-            // Tap Listener
-            const controller = renderer.xr.getController(0);
-            controller.addEventListener('select', () => {
-                if (reticle.visible) {
-                    radioGroup.position.setFromMatrixPosition(reticle.matrix);
-                    radioGroup.visible = true;
-                    document.getElementById('instructions').innerText = "Radio Placed!";
-                    setTimeout(() => { document.getElementById('instructions').style.display = 'none'; }, 2000);
-                }
-            });
-            scene.add(controller);
-
-            window.addEventListener('resize', onWindowResize);
-            renderer.setAnimationLoop(render);
-        }
-
-        function createRadioUI() {
-            const audio = document.getElementById('audio-player');
-            audio.src = songs[songIndex].src;
-
-            const div = document.createElement('div');
-            div.className = 'radio-ui';
-            div.innerHTML = `
-                <div id="sn" style="text-align:center; font-weight:bold">${songs[songIndex].title}</div>
-                <button id="pbtn">PLAY / PAUSE</button>
-                <button id="nbtn">NEXT SONG</button>
-            `;
-
-            div.querySelector('#pbtn').onclick = (e) => {
-                e.stopPropagation();
-                audio.paused ? audio.play() : audio.pause();
-            };
-
-            div.querySelector('#nbtn').onclick = (e) => {
-                e.stopPropagation();
-                songIndex = (songIndex + 1) % songs.length;
-                audio.src = songs[songIndex].src;
-                document.getElementById('sn').innerText = songs[songIndex].title;
-                audio.play();
-            };
-
-            const uiObj = new CSS2DObject(div);
-            uiObj.position.set(0, 0.5, 0);
-            radioGroup.add(uiObj);
-        }
-
-        function onWindowResize() {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            labelRenderer.setSize(window.innerWidth, window.innerHeight);
-        }
-
-        async function render(timestamp, frame) {
-            if (frame) {
-                const session = renderer.xr.getSession();
-                const referenceSpace = renderer.xr.getReferenceSpace();
-
-                if (hitTestSourceRequested === false) {
-                    session.requestReferenceSpace('viewer').then((viewerSpace) => {
-                        session.requestHitTestSource({ space: viewerSpace }).then((source) => {
-                            hitTestSource = source;
-                        });
-                    });
-                    hitTestSourceRequested = true;
-                }
-
-                if (hitTestSource) {
-                    const hitTestResults = frame.getHitTestResults(hitTestSource);
-                    if (hitTestResults.length) {
-                        const hit = hitTestResults[0];
-                        reticle.visible = true;
-                        reticle.matrix.fromArray(hit.getPose(referenceSpace).transform.matrix);
-                        if(document.getElementById('instructions').innerText.includes("Point camera")) {
-                            document.getElementById('instructions').innerText = "Tap screen to place radio";
-                        }
-                    } else {
-                        reticle.visible = false;
-                    }
-                }
-            }
-            renderer.render(scene, camera);
-            labelRenderer.render(scene, camera);
+    <h1>3D Radio Model</h1>
+    <div class="controls">
+        <button class="button" onclick="move('up')">↑</button>
+        <button class="button" onclick="move('down')">↓</button>
+        <button class="button" onclick="move('left')">←</button>
+        <button class="button" onclick="move('right')">→</button>
+    </div>
+    <div class="audio-controls">
+        <h2>Audio Controls</h2>
+        <input type="range" min="0" max="100" value="50" id="volume" />
+        <label for="volume">Volume</label>
+    </div>
+    <script>
+        function move(direction) {
+            console.log('Moving the radio', direction);
+            // Add movement handling logic here
         }
     </script>
 </body>
