@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hybrid Spatial Radio</title>
+    <title>Fixed Spatial Radio</title>
     <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.4.0/model-viewer.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
@@ -13,7 +13,7 @@
         
         #static-player {
             position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
-            width: 90%; max-width: 400px; background: rgba(25, 15, 5, 0.95);
+            width: 90%; max-width: 400px; background: rgba(20, 15, 10, 0.98);
             border: 2px solid #e5b13a; border-radius: 4px; padding: 15px;
             z-index: 2000; display: flex; justify-content: space-between; align-items: center;
         }
@@ -32,7 +32,7 @@
     <div id="static-player">
         <div class="info-box">
             <div id="track-display">TRACK: Die House</div>
-            <div style="font-size: 9px; color: #888;">HYBRID SPATIAL ENGINE: ACTIVE</div>
+            <div style="font-size: 9px; color: #888;">SPATIAL PHASE: CORRECTED</div>
         </div>
         <div class="btn-group">
             <button class="radio-btn" onclick="togglePlay()" id="playBtn">PLAY</button>
@@ -54,8 +54,6 @@
         const trackDisplay = document.getElementById('track-display');
         const playBtn = document.getElementById('playBtn');
 
-        // --- SPATIAL AUDIO ENGINE ---
-        const AudioContext = window.AudioContext || window.webkitAudioContext;
         let audioCtx, source, biquadFilter, panner, gainNode;
         
         const playlist = [
@@ -68,7 +66,7 @@
 
         function initAudio() {
             if (!audioCtx) {
-                audioCtx = new AudioContext();
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
                 source = audioCtx.createMediaElementSource(audio);
                 
                 biquadFilter = audioCtx.createBiquadFilter();
@@ -88,32 +86,30 @@
             }
         }
 
-        // The core logic that updates sound based on the model's actual rotation
         function updateSpatialSound() {
             if (!panner || !gainNode) return;
 
-            // Get current orbit from the viewer (this works for both hand and finger)
             const orbit = viewer.getCameraOrbit(); 
-            const theta = orbit.theta; // Horizontal angle in radians
+            // We add Math.PI (180 deg) here to flip the audio orientation
+            const theta = orbit.theta + Math.PI; 
 
-            // Calculate directionality
-            // 0 radians = front, Math.PI = back
-            const zPos = Math.cos(theta);
+            // Calculate directionality (Inverted Z to fix reverse effect)
+            const zPos = -Math.cos(theta); 
             const xPos = Math.sin(theta);
 
             panner.setPosition(xPos, 0, zPos);
 
-            // Volume drops when facing away (zPos is negative)
-            // Range 0.2 to 1.0
-            const volumeFactor = Math.max(0.2, (zPos + 1.2) / 2.2); 
-            gainNode.gain.setTargetAtTime(volumeFactor, audioCtx.currentTime, 0.05);
+            // Volume/Muffle calculation logic
+            // When zPos is 1, it's facing front. When -1, it's facing back.
+            const orientationFactor = (zPos + 1) / 2; // 0 to 1 range
+            
+            const volume = Math.max(0.15, orientationFactor);
+            gainNode.gain.setTargetAtTime(volume, audioCtx.currentTime, 0.05);
 
-            // Muffle the sound more when it's facing away
-            const muffleFreq = Math.max(800, 1600 * ((zPos + 1) / 2));
+            const muffleFreq = 600 + (1400 * orientationFactor);
             biquadFilter.frequency.setTargetAtTime(muffleFreq, audioCtx.currentTime, 0.05);
         }
 
-        // Run the update on every frame the model viewer renders
         viewer.addEventListener('camera-change', updateSpatialSound);
 
         function togglePlay() {
@@ -132,7 +128,6 @@
             playBtn.innerText = "PAUSE";
         }
 
-        // --- HAND TRACKING ---
         const hands = new Hands({
             locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
         });
@@ -144,10 +139,7 @@
                 const palm = results.multiHandLandmarks[0][9];
                 const deg = (palm.x - 0.5) * 180;
                 const tilt = (palm.y - 0.5) * 60 + 75;
-                
-                // This triggers 'camera-change' event, which calls updateSpatialSound()
                 viewer.cameraOrbit = `${deg}deg ${tilt}deg auto`;
-
                 const vPos = (0.5 - palm.y) * 150;
                 viewer.style.transform = `translateY(${vPos}px)`;
             }
