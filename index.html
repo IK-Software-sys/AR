@@ -3,167 +3,80 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Distance Radio AR</title>
-    
+    <title>Fixed Android AR</title>
     <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.4.0/model-viewer.min.js"></script>
-
     <style>
-        :root { --gold: #e5b13a; }
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; font-family: sans-serif; }
-
-        /* The Viewer handles the Camera Feed once AR starts */
-        model-viewer {
-            width: 100%;
-            height: 100%;
-            background-color: #000;
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; color: white; }
+        model-viewer { width: 100%; height: 100%; }
+        
+        .ui {
+            position: absolute; bottom: 30px; width: 100%;
+            display: flex; flex-direction: column; align-items: center; gap: 15px; z-index: 100;
         }
 
-        /* UI Overlays */
-        .overlay {
-            position: absolute;
-            z-index: 100;
-            width: 100%;
-            pointer-events: none;
+        .ar-btn {
+            background: #fff; color: #000; padding: 20px 40px;
+            border-radius: 50px; font-weight: bold; border: none; font-size: 18px;
+            box-shadow: 0 5px 20px rgba(229, 177, 58, 0.4);
         }
 
-        .top-ui { top: 20px; display: flex; justify-content: center; }
-        .bottom-ui { bottom: 30px; display: flex; flex-direction: column; align-items: center; gap: 15px; }
-
-        .glass-panel {
-            background: rgba(0, 0, 0, 0.8);
-            backdrop-filter: blur(10px);
-            border: 1px solid #444;
-            border-radius: 15px;
-            padding: 15px;
-            pointer-events: auto;
-            color: white;
-            text-align: center;
-            min-width: 250px;
+        #logger {
+            background: rgba(0,0,0,0.8); padding: 10px; border-radius: 5px;
+            font-family: monospace; font-size: 11px; width: 80%; border: 1px solid #444;
         }
-
-        .telemetry {
-            font-family: monospace;
-            font-size: 12px;
-            color: var(--gold);
-            margin-top: 5px;
-        }
-
-        button {
-            padding: 12px 24px;
-            border-radius: 50px;
-            border: none;
-            font-weight: bold;
-            cursor: pointer;
-            pointer-events: auto;
-        }
-
-        .ar-launch-btn { background: #fff; color: #000; font-size: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
-        .music-btn { background: var(--gold); color: #000; flex: 1; }
-        .next-btn { background: #333; color: #fff; flex: 1; }
-
-        .hidden { display: none; }
     </style>
 </head>
 <body>
 
-    <model-viewer id="ar-radio"
-        src="old_radio.glb"
-        ar
-        ar-modes="webxr"
-        camera-controls
+    <model-viewer 
+        id="ctrl"
+        src="./old_radio.glb" 
+        ar 
+        ar-modes="webxr scene-viewer" 
+        camera-controls 
         ar-placement="floor"
-        shadow-intensity="1"
-        exposure="1">
+        shadow-intensity="1">
 
-        <div class="overlay top-ui">
-            <div class="glass-panel" id="status-panel">
-                <div>AI TRACKING ACTIVE</div>
-                <div id="distance-info" class="telemetry">Distance: -- | Scale: --</div>
-            </div>
-        </div>
-
-        <div class="overlay bottom-ui">
-            <div class="glass-panel">
-                <div id="track-title" style="margin-bottom: 10px; font-weight: bold;">Die House</div>
-                <div style="display: flex; gap: 10px;">
-                    <button class="music-btn" id="play-pause">Play</button>
-                    <button class="next-btn" id="next-track">Next</button>
-                </div>
-            </div>
-
-            <button slot="ar-button" class="ar-launch-btn">
-                ENABLE BACK CAMERA AR
-            </button>
+        <div class="ui">
+            <div id="logger">System Status: Waiting for user...</div>
+            <button slot="ar-button" class="ar-btn">START CAMERA FEED</button>
         </div>
 
     </model-viewer>
 
-    <audio id="audio-engine" src="cuphead-ost-die-house-music.mp3"></audio>
-
     <script>
-        const viewer = document.querySelector('#ar-radio');
-        const audioEngine = document.querySelector('#audio-engine');
-        const distanceText = document.querySelector('#distance-info');
-        
-        const playlist = [
-            { name: "Die House", file: "cuphead-ost-die-house-music.mp3" },
-            { name: "Quantum Mechanics", file: "quantum-mechanics.mp3" }
-        ];
-        let currentTrack = 0;
+        const m = document.querySelector('#ctrl');
+        const log = document.querySelector('#logger');
 
-        // --- ML-STYLE DISTANCE SCALING LOGIC ---
-        // We track the distance between the camera and the object.
-        // If you move further away, the radio scales up to stay visible.
-        
-        const monitorDistance = () => {
-            if (viewer.arTracking === 'tracking') {
-                // Get the distance in meters from the camera to the center of the radio
-                const orbit = viewer.getCameraOrbit(); 
-                const dist = orbit.radius; 
+        // 1. Log when the radio model is actually ready
+        m.addEventListener('load', () => {
+            log.innerText = "✅ Radio Model Loaded. Ready for AR.";
+        });
 
-                // Scaling Algorithm: 
-                // We want to maintain a visual size. 
-                // As distance (dist) increases, scale increases.
-                let newScale = dist * 0.7; 
-                
-                // Clamp values so it doesn't get invisible or giant
-                newScale = Math.min(Math.max(newScale, 0.3), 4.0);
-
-                // Apply the scale to the 3D model
-                viewer.scale = `${newScale} ${newScale} ${newScale}`;
-
-                // Update UI
-                distanceText.innerText = `Distance: ${dist.toFixed(2)}m | Scale: ${newScale.toFixed(2)}x`;
+        // 2. Log if the AR fails to start
+        m.addEventListener('ar-status', (event) => {
+            log.innerText = "Status: " + event.detail.status;
+            if (event.detail.status === 'failed') {
+                log.innerText = "❌ FAILED: Check Camera Permissions or ARCore updates.";
             }
-            requestAnimationFrame(monitorDistance);
-        };
+        });
 
-        // Start the logic loop
-        monitorDistance();
-
-        // --- MUSIC PLAYER LOGIC ---
-        document.querySelector('#play-pause').onclick = () => {
-            if (audioEngine.paused) {
-                audioEngine.play();
-                document.querySelector('#play-pause').innerText = "Pause";
-            } else {
-                audioEngine.pause();
-                document.querySelector('#play-pause').innerText = "Play";
+        // 3. ML-Style Scaling Logic (Distance Based)
+        setInterval(() => {
+            if (m.arTracking === 'tracking') {
+                const orbit = m.getCameraOrbit();
+                const d = orbit.radius; 
+                // Scaling factor: Object grows as you walk away to stay visible
+                let s = d * 0.8; 
+                s = Math.min(Math.max(s, 0.4), 3.0);
+                m.scale = `${s} ${s} ${s}`;
+                log.innerText = `📏 Distance: ${d.toFixed(2)}m | Scale: ${s.toFixed(2)}x`;
             }
-        };
+        }, 100);
 
-        document.querySelector('#next-track').onclick = () => {
-            currentTrack = (currentTrack + 1) % playlist.length;
-            audioEngine.src = playlist[currentTrack].file;
-            document.querySelector('#track-title').innerText = playlist[currentTrack].name;
-            audioEngine.play();
-            document.querySelector('#play-pause').innerText = "Pause";
-        };
-
-        // Error handling for Android Chrome
-        viewer.addEventListener('error', (e) => {
-            console.error("AR Error:", e);
-            alert("Ensure your radio file is named 'old_radio.glb' and you are on an HTTPS link.");
+        // 4. Critical Error Catching
+        m.addEventListener('error', (e) => {
+            log.innerText = "❌ Error: Could not find 'old_radio.glb'";
         });
     </script>
 </body>
