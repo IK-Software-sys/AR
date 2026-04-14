@@ -1,111 +1,190 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>AR Radio Game</title>
-    <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
-    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
-    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Inconvenient Gyro-AR</title>
     <style>
-        /* Modernized Audio UI */
-        #ui-overlay {
+        body { margin: 0; overflow: hidden; background: #000; }
+        video { position: fixed; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: -1; }
+        
+        #overlay {
             position: fixed;
-            bottom: 20px;
+            top: 10px;
+            width: 100%;
+            text-align: center;
+            color: #00ffcc;
+            font-family: monospace;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        #ui-panel {
+            position: fixed;
+            bottom: 30px;
             left: 50%;
             transform: translateX(-50%);
-            width: 280px;
-            background: rgba(0, 0, 0, 0.7);
-            backdrop-filter: blur(10px);
-            border: 1px solid #00ffcc;
-            border-radius: 15px;
+            background: rgba(0,0,0,0.8);
             padding: 15px;
+            border: 2px solid #555;
             color: white;
-            text-align: center;
-            z-index: 1000;
-            display: none; /* Hidden until marker found */
+            display: none;
+            z-index: 100;
         }
-        .btn-row { display: flex; justify-content: space-around; margin-top: 10px; }
+
         button {
-            background: #00ffcc;
-            border: none;
             padding: 10px;
-            border-radius: 5px;
+            background: #444;
+            color: white;
+            border: 1px solid #888;
+            margin: 5px;
+        }
+
+        #calibrate {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 20px;
+            background: red;
+            color: white;
             font-weight: bold;
-            cursor: pointer;
+            z-index: 200;
         }
     </style>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
 </head>
+<body>
 
-<body style="margin: 0; overflow: hidden;">
-
-    <div id="ui-overlay">
-        <div id="track-name">Radio Off</div>
-        <div class="btn-row">
-            <button onclick="playMusic()">PLAY</button>
-            <button onclick="pauseMusic()">PAUSE</button>
-            <button onclick="nextMusic()">NEXT</button>
-        </div>
+    <div id="overlay">
+        STATUS: SENSOR SCANNING<br>
+        FIND THE RADIO IN THE ROOM
     </div>
 
-    <a-scene embedded arjs="sourceType: webcam; debugUIEnabled: false;">
-        
-        <a-assets>
-            <a-asset-item id="radio-model" src="old_radio.glb"></a-asset-item>
-        </a-assets>
+    <button id="calibrate">GRANT PERMISSIONS & SPAWN RADIO</button>
 
-        <a-marker preset="hiro" id="radio-marker">
-            
-            <a-entity 
-                id="radio-entity"
-                gltf-model="#radio-model" 
-                scale="1 1 1" 
-                position="0 0 0"
-                animation="property: rotation; to: 0 360 0; loop: true; dur: 10000; easing: linear">
-            </a-entity>
+    <div id="ui-panel">
+        <div id="tn">Radio Idle</div>
+        <button onclick="playA()">PLAY</button>
+        <button onclick="pauseA()">PAUSE</button>
+        <button onclick="nextA()">NEXT</button>
+    </div>
 
-        </a-marker>
+    <video id="webcam" autoplay playsinline></video>
 
-        <a-entity camera></a-entity>
-    </a-scene>
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-    <script>
-        // --- Audio Logic ---
+        // --- 1. Audio Logic ---
         const tracks = [
-            { src: 'cuphead-ost-die-house-music.mp3', name: 'Cuphead - Die House' },
-            { src: encodeURI('Quantum Mechanics.mp3'), name: 'Quantum Mechanics' }
+            { src: 'cuphead-ost-die-house-music.mp3', name: 'Cuphead' },
+            { src: encodeURI('Quantum Mechanics.mp3'), name: 'Quantum' }
         ];
-        let currentIdx = 0;
-        let audio = new Audio(tracks[currentIdx].src);
-
-        const trackName = document.getElementById('track-name');
-        const ui = document.getElementById('ui-overlay');
-        const marker = document.getElementById('radio-marker');
-
-        // Show UI only when marker is detected
-        marker.addEventListener('markerFound', () => {
-            ui.style.display = 'block';
-            trackName.innerText = tracks[currentIdx].name;
-        });
-
-        marker.addEventListener('markerLost', () => {
-            ui.style.display = 'none';
-        });
-
-        function playMusic() { audio.play(); }
-        function pauseMusic() { audio.pause(); }
-        function nextMusic() {
+        let idx = 0;
+        let audio = new Audio(tracks[idx].src);
+        window.playA = () => audio.play();
+        window.pauseA = () => audio.pause();
+        window.nextA = () => {
             audio.pause();
-            currentIdx = (currentIdx + 1) % tracks.length;
-            audio = new Audio(tracks[currentIdx].src);
-            trackName.innerText = tracks[currentIdx].name;
+            idx = (idx + 1) % tracks.length;
+            audio = new Audio(tracks[idx].src);
+            document.getElementById('tn').innerText = tracks[idx].name;
             audio.play();
+        };
+
+        // --- 2. Camera Background ---
+        const video = document.getElementById('webcam');
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+            .then(stream => video.srcObject = stream);
+
+        // --- 3. Three.js Engine ---
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        
+        // This is the "Hard" part: We wrap the camera in a group to handle orientation
+        const cameraGroup = new THREE.Group();
+        scene.add(cameraGroup);
+        cameraGroup.add(camera);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        scene.add(new THREE.AmbientLight(0xffffff, 2));
+
+        let radio;
+        new GLTFLoader().load('old_radio.glb', (gltf) => {
+            radio = gltf.scene;
+            radio.position.set(0, 0, -5); // Radio is 5 meters in front of your initial "North"
+            scene.add(radio);
+        });
+
+        // --- 4. The Raw Gyroscope Logic ---
+        function onDeviceOrientation(e) {
+            // Raw Euler conversion from phone tilt to 3D space
+            const alpha = e.alpha ? THREE.MathUtils.degToRad(e.alpha) : 0; // Z
+            const beta = e.beta ? THREE.MathUtils.degToRad(e.beta) : 0;   // X
+            const gamma = e.gamma ? THREE.MathUtils.degToRad(e.gamma) : 0; // Y
+
+            // Manually constructing the rotation matrix (Inconvenient & precise)
+            const orient = window.orientation ? THREE.MathUtils.degToRad(window.orientation) : 0;
+            setObjectQuaternion(camera.quaternion, alpha, beta, gamma, orient);
         }
 
-        // --- Movement Fix ---
-        // Instead of the arrows moving the radio, 
-        // the radio is locked to the marker on your desk. 
-        // You move your phone around the paper to see different angles.
+        // Helper to map mobile sensors to Three.js world coordinates
+        const setObjectQuaternion = function() {
+            const zee = new THREE.Vector3(0, 0, 1);
+            const euler = new THREE.Euler();
+            const q0 = new THREE.Quaternion();
+            const q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5));
+
+            return function(quaternion, alpha, beta, gamma, orient) {
+                euler.set(beta, alpha, -gamma, 'YXZ');
+                quaternion.setFromEuler(euler);
+                quaternion.multiply(q1);
+                quaternion.multiply(q0.setFromAxisAngle(zee, -orient));
+            };
+        }();
+
+        // --- 5. Activation ---
+        document.getElementById('calibrate').addEventListener('click', function() {
+            this.style.display = 'none';
+            document.getElementById('ui-panel').style.display = 'block';
+            
+            if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                DeviceOrientationEvent.requestPermission().then(state => {
+                    if (state === 'granted') window.addEventListener('deviceorientation', onDeviceOrientation);
+                });
+            } else {
+                window.addEventListener('deviceorientation', onDeviceOrientation);
+            }
+        });
+
+        const raycaster = new THREE.Raycaster();
+        const center = new THREE.Vector2(0, 0); // Screen center for "hover"
+
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // "Hover" is now defined as pointing your phone directly at the object
+            if (radio) {
+                raycaster.setFromCamera(center, camera);
+                const hit = raycaster.intersectObject(radio, true);
+                document.getElementById('ui-panel').style.opacity = hit.length > 0 ? "1" : "0.3";
+            }
+
+            renderer.render(scene, camera);
+        }
+        animate();
     </script>
 </body>
 </html>
