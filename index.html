@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AR room - Fist to Summon</title>
+    <title>Fixed WebAR Radio</title>
     
     <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
@@ -11,13 +11,10 @@
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
 
     <style>
-        body { margin: 0; overflow: hidden; background-color: #000; font-family: sans-serif; }
+        body { margin: 0; overflow: hidden; background-color: #000; }
         
-        /* Hidden input for AI processing */
-        #video-input { display: none; }
-        
-        /* The visible camera feed */
-        #camera-feed {
+        /* The Single Source Video */
+        #shared-video {
             position: absolute;
             top: 0; left: 0;
             width: 100vw; height: 100vh;
@@ -25,7 +22,7 @@
             z-index: 1;
         }
 
-        /* The hand skeleton canvas */
+        /* The Hand Skeleton Layer */
         #hand-canvas {
             position: absolute;
             top: 0; left: 0;
@@ -33,9 +30,10 @@
             object-fit: cover;
             z-index: 2;
             pointer-events: none;
+            /* Remove transform: scaleX(-1) if the skeleton is on the wrong side */
         }
 
-        /* A-Frame Container */
+        /* The 3D Layer */
         a-scene {
             position: absolute;
             top: 0; left: 0;
@@ -46,36 +44,34 @@
 </head>
 <body>
 
-    <video id="video-input" playsinline></video>
-    <video id="camera-feed" autoplay playsinline></video>
+    <video id="shared-video" autoplay playsinline></video>
     <canvas id="hand-canvas"></canvas>
 
-    <a-scene embedded vr-mode-ui="enabled: false" renderer="alpha: true; antialias: true; colorManagement: true;">
+    <a-scene embedded vr-mode-ui="enabled: false" renderer="alpha: true; antialias: true;">
         <a-assets>
             <a-asset-item id="radio-model" src="old_radio.glb"></a-asset-item>
         </a-assets>
 
-        <a-entity light="type: ambient; intensity: 1"></a-entity>
-        <a-entity light="type: directional; intensity: 0.8" position="1 2 1"></a-entity>
+        <a-light type="ambient" intensity="1.5"></a-light>
+        <a-light type="directional" position="1 2 1"></a-light>
 
         <a-camera position="0 1.6 0" look-controls="enabled: false">
-            <a-cursor fuse="false" color="yellow" raycaster="objects: .clickable"></a-cursor>
+            <a-cursor fuse="false" color="cyan" raycaster="objects: .clickable"></a-cursor>
         </a-camera>
 
         <a-entity id="radio-group" position="0 1.5 -2" visible="false">
-            
             <a-entity gltf-model="#radio-model" scale="1 1 1" rotation="0 180 0"></a-entity>
             
-            <a-box size="0.2 0.2 0.2" material="wireframe: true; color: white" opacity="0.5"></a-box>
+            <a-box size="0.3 0.3 0.3" material="wireframe: true; color: white" opacity="0.4"></a-box>
 
-            <a-entity position="0 0.6 0">
-                <a-plane class="clickable" width="0.5" height="0.15" color="#222" position="-0.3 0 0" 
+            <a-entity position="0 0.7 0">
+                <a-plane class="clickable" width="0.5" height="0.18" color="#333" position="-0.3 0 0" 
                          text="value: Song 1; align: center" onmouseenter="playSong('song1')"></a-plane>
                 
-                <a-plane class="clickable" width="0.5" height="0.15" color="#222" position="0.3 0 0" 
+                <a-plane class="clickable" width="0.5" height="0.18" color="#333" position="0.3 0 0" 
                          text="value: Song 2; align: center" onmouseenter="playSong('song2')"></a-plane>
                 
-                <a-plane class="clickable" width="0.4" height="0.15" color="#900" position="0 -0.2 0" 
+                <a-plane class="clickable" width="0.4" height="0.15" color="#900" position="0 -0.25 0" 
                          text="value: Stop; align: center" onmouseenter="pauseAudio()"></a-plane>
             </a-entity>
         </a-entity>
@@ -85,41 +81,33 @@
     <audio id="audio-song2" src="Quantum Mechanics.mp3"></audio>
 
     <script>
-        const videoElement = document.getElementById('video-input');
-        const cameraBg = document.getElementById('camera-feed');
+        const video = document.getElementById('shared-video');
         const canvasElement = document.getElementById('hand-canvas');
         const canvasCtx = canvasElement.getContext('2d');
         const radioGroup = document.getElementById('radio-group');
-
         const audio1 = document.getElementById('audio-song1');
         const audio2 = document.getElementById('audio-song2');
 
-        // 1. Setup Camera (Environment mode for Back Camera)
-        async function startCamera() {
+        // 1. Unified Camera Access
+        async function initCamera() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { 
-                        facingMode: "environment",
-                        width: { ideal: 640 }, // Lower res to prevent browser crash
-                        height: { ideal: 480 }
-                    }
+                    video: { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 480 } }
                 });
-                videoElement.srcObject = stream;
-                cameraBg.srcObject = stream;
-                return new Promise(resolve => videoElement.onloadedmetadata = () => resolve());
+                video.srcObject = stream;
+                return new Promise(resolve => video.onloadedmetadata = () => resolve());
             } catch (err) {
-                alert("Camera Access Denied or Busy. Error: " + err);
+                alert("Camera Error: " + err.name + ". Close other apps using camera.");
             }
         }
 
-        // 2. MediaPipe Hands Logic
+        // 2. MediaPipe Config
         const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-        
         hands.setOptions({
             maxNumHands: 1,
-            modelComplexity: 0, // 0 is essential for mobile performance/stability
-            minDetectionConfidence: 0.5,
-            minTrackingConfidence: 0.5
+            modelComplexity: 0,
+            minDetectionConfidence: 0.6,
+            minTrackingConfidence: 0.6
         });
 
         hands.onResults((results) => {
@@ -128,18 +116,16 @@
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                 const landmarks = results.multiHandLandmarks[0];
 
-                // Draw Skeleton (Green lines, Red dots)
+                // Draw Skeleton
                 drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 4});
                 drawLandmarks(canvasCtx, landmarks, {color: '#FF0000', radius: 3});
 
-                // Mapping Coordinates (No mirroring for back camera)
+                // Mapping 2D points to 3D Space
                 const indexTip = landmarks[8];
-                const wrist = landmarks[0];
                 const targetX = (indexTip.x * 4) - 2; 
                 const targetY = (1 - indexTip.y) * 3;
 
-                // FIST GESTURE DETECTION
-                // If fingertips are below the middle knuckles
+                // FIST DETECTION (Appear/Teleport)
                 const isFist = landmarks[8].y > landmarks[6].y && 
                                landmarks[12].y > landmarks[10].y && 
                                landmarks[16].y > landmarks[14].y;
@@ -149,7 +135,7 @@
                     radioGroup.setAttribute('position', `${targetX} ${targetY} -1.5`);
                 }
 
-                // PINCH GESTURE DETECTION (Thumb + Index)
+                // PINCH DETECTION (Drag)
                 const pinchDist = Math.hypot(landmarks[8].x - landmarks[4].x, landmarks[8].y - landmarks[4].y);
                 if (pinchDist < 0.05) {
                     radioGroup.setAttribute('position', `${targetX} ${targetY} -1.5`);
@@ -157,29 +143,29 @@
             }
         });
 
-        // 3. Audio Functions
+        // 3. Execution
+        initCamera().then(() => {
+            // Processing loop
+            async function process() {
+                canvasElement.width = video.videoWidth;
+                canvasElement.height = video.videoHeight;
+                await hands.send({image: video});
+                requestAnimationFrame(process);
+            }
+            process();
+        });
+
+        // 4. Audio Controls
         function playSong(id) {
             pauseAudio();
-            if (id === 'song1') audio1.play();
-            if (id === 'song2') audio2.play();
+            if (id === 'song1') audio1.play().catch(() => alert("Tap screen first!"));
+            if (id === 'song2') audio2.play().catch(() => alert("Tap screen first!"));
         }
 
         function pauseAudio() {
             audio1.pause();
             audio2.pause();
         }
-
-        // 4. Initialize
-        startCamera().then(() => {
-            const camera = new Camera(videoElement, {
-                onFrame: async () => {
-                    canvasElement.width = videoElement.videoWidth;
-                    canvasElement.height = videoElement.videoHeight;
-                    await hands.send({image: videoElement});
-                }
-            });
-            camera.start();
-        });
     </script>
 </body>
 </html>
