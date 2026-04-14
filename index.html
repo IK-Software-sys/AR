@@ -2,82 +2,25 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WebXR AR Radio</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>3D AR Radio</title>
     <style>
-        body {
-            margin: 0;
-            overflow: hidden;
-            background-color: #000;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        body { margin: 0; overflow: hidden; font-family: sans-serif; }
+        #ar-instructions {
+            position: absolute; top: 10px; width: 100%; text-align: center;
+            color: white; z-index: 10; pointer-events: none; text-shadow: 0 1px 4px rgba(0,0,0,0.8);
         }
-        
-        /* The DOM Overlay Container */
-        #overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none; /* Let taps pass through to AR */
-            display: flex;
-            flex-direction: column;
-            justify-content: flex-end;
-            align-items: center;
-            padding-bottom: 40px;
-        }
-
-        /* The Audio Controls UI */
+        /* Hover UI for Radio */
         #radio-ui {
-            background: rgba(20, 20, 20, 0.85);
-            backdrop-filter: blur(10px);
-            color: #fff;
-            padding: 20px;
-            border-radius: 16px;
-            text-align: center;
-            border: 1px solid #555;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-            pointer-events: auto; /* Make buttons clickable */
-            display: none; /* Hidden until radio is placed */
-            width: 80%;
-            max-width: 300px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white; padding: 12px; border-radius: 10px;
+            display: none; flex-direction: column; align-items: center;
         }
-
-        #track-name {
-            font-size: 16px;
-            margin-bottom: 15px;
-            font-weight: bold;
-            color: #4CAF50;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
         .controls button {
-            background: #333;
-            color: white;
-            border: none;
-            padding: 12px 16px;
-            margin: 0 5px;
-            border-radius: 8px;
-            font-size: 16px;
-            cursor: pointer;
-        }
-
-        .controls button:active {
-            background: #4CAF50;
-        }
-
-        #instructions {
-            background: rgba(0,0,0,0.6);
-            color: white;
-            padding: 10px 20px;
-            border-radius: 20px;
-            margin-bottom: 20px;
-            pointer-events: auto;
+            background: #444; color: white; border: none;
+            padding: 8px 12px; margin: 5px; border-radius: 5px;
         }
     </style>
-
     <script type="importmap">
         {
             "imports": {
@@ -88,121 +31,125 @@
     </script>
 </head>
 <body>
-
-    <div id="overlay">
-        <div id="instructions">Point at the floor and tap to place radio</div>
-        
-        <div id="radio-ui">
-            <div id="track-name">1. Die House (Cuphead OST)</div>
-            <div class="controls">
-                <button id="btn-play">▶</button>
-                <button id="btn-pause">⏸</button>
-                <button id="btn-next">⏭</button>
-            </div>
+    <div id="ar-instructions">Scan the floor and tap to place the radio</div>
+    
+    <div id="radio-ui">
+        <div id="track-name">Loading...</div>
+        <div class="controls">
+            <button id="btn-play">▶</button>
+            <button id="btn-pause">⏸</button>
+            <button id="btn-next">⏭</button>
         </div>
     </div>
 
     <script type="module">
         import * as THREE from 'three';
-        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         import { ARButton } from 'three/addons/webxr/ARButton.js';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 
-        // --- 1. Audio Setup ---
-        const tracks = [
-            { src: 'cuphead-ost-die-house-music.mp3', name: '1. Die House (Cuphead OST)' },
-            { src: 'Quantum Mechanics.mp3', name: '2. Quantum Mechanics' }
-        ];
-        let currentTrackIdx = 0;
-        const audio = new Audio(tracks[currentTrackIdx].src);
-        audio.loop = true;
-
-        const trackNameEl = document.getElementById('track-name');
-        
-        document.getElementById('btn-play').addEventListener('click', () => audio.play());
-        document.getElementById('btn-pause').addEventListener('click', () => audio.pause());
-        document.getElementById('btn-next').addEventListener('click', () => {
-            currentTrackIdx = (currentTrackIdx + 1) % tracks.length;
-            audio.src = tracks[currentTrackIdx].src;
-            trackNameEl.textContent = tracks[currentTrackIdx].name;
-            audio.play();
-        });
-
-        // --- 2. Scene Setup ---
-        const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
-
-        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-        renderer.setPixelRatio(window.devicePixelRatio);
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.xr.enabled = true; // Turn on WebXR
-        document.body.appendChild(renderer.domElement);
-
-        // Add the AR Start Button to the page, requesting Hit Test and DOM Overlay features
-        document.body.appendChild(ARButton.createButton(renderer, {
-            requiredFeatures: ['hit-test', 'dom-overlay'],
-            domOverlay: { root: document.getElementById('overlay') }
-        }));
-
-        // Lighting
-        const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
-        light.position.set(0.5, 1, 0.25);
-        scene.add(light);
-
-        // --- 3. Load Model ---
-        let radioMesh;
-        const loader = new GLTFLoader();
-        loader.load('old_radio.glb', (gltf) => {
-            radioMesh = gltf.scene;
-            radioMesh.visible = false; // Hide until placed
-            
-            // Optional: Scale model down if it's too big for AR
-            // radioMesh.scale.set(0.2, 0.2, 0.2); 
-            
-            scene.add(radioMesh);
-        });
-
-        // --- 4. AR Hit Testing (The Reticle) ---
-        // Creates a ring that shows where the model will be placed
-        const reticle = new THREE.Mesh(
-            new THREE.RingGeometry(0.15, 0.2, 32).rotateX(-Math.PI / 2),
-            new THREE.MeshBasicMaterial({ color: 0x00ff00 })
-        );
-        reticle.matrixAutoUpdate = false;
-        reticle.visible = false;
-        scene.add(reticle);
-
+        let container, scene, camera, renderer, labelRenderer;
+        let controller, reticle, radioMesh;
         let hitTestSource = null;
         let hitTestSourceRequested = false;
 
-        // Controller for tapping the screen
-        const controller = renderer.xr.getController(0);
-        controller.addEventListener('select', onSelect);
-        scene.add(controller);
+        // --- Audio Setup ---
+        const tracks = [
+            { src: 'cuphead-ost-die-house-music.mp3', name: 'Die House' },
+            { src: 'Quantum Mechanics.mp3', name: 'Quantum Mechanics' }
+        ];
+        let currentTrackIdx = 0;
+        const audio = new Audio(tracks[currentTrackIdx].src);
+        
+        init();
+        animate();
+
+        function init() {
+            container = document.createElement('div');
+            document.body.appendChild(container);
+
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
+
+            // Light
+            const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
+            scene.add(light);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.xr.enabled = true;
+            container.appendChild(renderer.domElement);
+
+            // UI Renderer
+            labelRenderer = new CSS2DRenderer();
+            labelRenderer.setSize(window.innerWidth, window.innerHeight);
+            labelRenderer.domElement.style.position = 'absolute';
+            labelRenderer.domElement.style.top = '0px';
+            labelRenderer.domElement.style.pointerEvents = 'none';
+            document.body.appendChild(labelRenderer.domElement);
+
+            // Add AR Button (Camera Access)
+            document.body.appendChild(ARButton.createButton(renderer, { requiredFeatures: ['hit-test'] }));
+
+            // Load Radio
+            new GLTFLoader().load('old_radio.glb', (gltf) => {
+                radioMesh = gltf.scene;
+                radioMesh.visible = false; // Hide until user places it
+                radioMesh.scale.set(0.5, 0.5, 0.5); // Scale down for AR
+                scene.add(radioMesh);
+
+                // Attach UI
+                const uiDiv = document.getElementById('radio-ui');
+                const uiObject = new CSS2DObject(uiDiv);
+                uiObject.position.set(0, 0.8, 0); 
+                radioMesh.add(uiObject);
+                document.getElementById('track-name').innerText = tracks[0].name;
+            });
+
+            // The "Reticle" (The ring that follows the floor)
+            reticle = new THREE.Mesh(
+                new THREE.RingGeometry(0.15, 0.2, 32).rotateX(-Math.PI / 2),
+                new THREE.MeshBasicMaterial()
+            );
+            reticle.matrixAutoUpdate = false;
+            reticle.visible = false;
+            scene.add(reticle);
+
+            // Placement logic
+            controller = renderer.xr.getController(0);
+            controller.addEventListener('select', onSelect);
+            scene.add(controller);
+
+            // Audio Controls
+            document.getElementById('btn-play').onclick = () => audio.play();
+            document.getElementById('btn-pause').onclick = () => audio.pause();
+            document.getElementById('btn-next').onclick = () => {
+                currentTrackIdx = (currentTrackIdx + 1) % tracks.length;
+                audio.src = tracks[currentTrackIdx].src;
+                document.getElementById('track-name').innerText = tracks[currentTrackIdx].name;
+                audio.play();
+            };
+        }
 
         function onSelect() {
-            if (reticle.visible && radioMesh && !radioMesh.visible) {
-                // Place the radio at the reticle's location
-                radioMesh.position.setFromMatrixPosition(reticle.matrix);
-                
-                // Make the radio face the user
-                const lookPos = new THREE.Vector3(camera.position.x, radioMesh.position.y, camera.position.z);
-                radioMesh.lookAt(lookPos);
-                
+            if (reticle.visible && radioMesh) {
                 radioMesh.visible = true;
-                reticle.visible = false;
-
-                // Update UI
-                document.getElementById('instructions').style.display = 'none';
-                document.getElementById('radio-ui').style.display = 'block';
+                radioMesh.position.setFromMatrixPosition(reticle.matrix);
+                document.getElementById('radio-ui').style.display = 'flex';
+                // First song starts on placement
+                if(audio.paused) audio.play(); 
             }
         }
 
-        // --- 5. Animation Loop ---
-        function animate(timestamp, frame) {
-            if (frame) {
-                const referenceSpace = renderer.xr.getReferenceSpace();
-                const session = renderer.xr.getSession();
+        function animate() {
+            renderer.setAnimationLoop(render);
+        }
 
+        function render(timestamp, frame) {
+            if (frame) {
+                const session = renderer.xr.getSession();
                 if (hitTestSourceRequested === false) {
                     session.requestReferenceSpace('viewer').then((referenceSpace) => {
                         session.requestHitTestSource({ space: referenceSpace }).then((source) => {
@@ -212,18 +159,14 @@
                     session.addEventListener('end', () => {
                         hitTestSourceRequested = false;
                         hitTestSource = null;
-                        document.getElementById('radio-ui').style.display = 'none';
-                        document.getElementById('instructions').style.display = 'block';
-                        if(radioMesh) radioMesh.visible = false;
                     });
                     hitTestSourceRequested = true;
                 }
 
                 if (hitTestSource) {
+                    const referenceSpace = renderer.xr.getReferenceSpace();
                     const hitTestResults = frame.getHitTestResults(hitTestSource);
-
-                    // If the radio isn't placed yet, show the reticle on physical surfaces
-                    if (hitTestResults.length > 0 && radioMesh && !radioMesh.visible) {
+                    if (hitTestResults.length) {
                         const hit = hitTestResults[0];
                         reticle.visible = true;
                         reticle.matrix.fromArray(hit.getPose(referenceSpace).transform.matrix);
@@ -232,17 +175,9 @@
                     }
                 }
             }
-
             renderer.render(scene, camera);
+            labelRenderer.render(scene, camera);
         }
-
-        renderer.setAnimationLoop(animate);
-
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        });
     </script>
 </body>
 </html>
